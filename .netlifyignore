@@ -1,0 +1,7 @@
+.git
+.tools
+.tmp-tools
+node_modules
+dist
+.netlify
+*.log
