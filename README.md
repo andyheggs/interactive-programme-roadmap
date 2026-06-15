@@ -23,7 +23,7 @@ npm run dev
 
 ## Local GitHub Tooling
 
-Portable local copies of Git and GitHub CLI can be enabled in PowerShell with:
+Portable local copies of Git, GitHub CLI and Node/npm can be enabled in PowerShell with:
 
 ```powershell
 .\use-github-tools.ps1
