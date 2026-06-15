@@ -1,6 +1,7 @@
 .git
 .tools
 .tmp-tools
+.deploy-work
 node_modules
 dist
 .netlify

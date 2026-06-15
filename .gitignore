@@ -3,6 +3,7 @@ dist
 .netlify
 .tools
 .tmp-tools
+.deploy-work
 .env
 .env.*
 *.log
