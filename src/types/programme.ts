@@ -110,5 +110,8 @@ export type ProgrammeFilters = {
   criticalOnly: boolean;
   roadmapOnly: boolean;
   delayedOnly: boolean;
+  datePreset: "all" | "status-forward" | "current-forward" | "next-30" | "next-60" | "next-90" | "custom";
+  dateStart: string;
+  dateEnd: string;
   search: string;
 };

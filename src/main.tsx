@@ -2,7 +2,6 @@ import React, { useEffect, useMemo, useState } from "react";
 import { createRoot } from "react-dom/client";
 import {
   CalendarDays,
-  ChevronDown,
   ChevronRight,
   Diamond,
   Download,
@@ -18,7 +17,7 @@ import {
   X,
 } from "lucide-react";
 import { parseMicrosoftProjectXml } from "./lib/parseMicrosoftProjectXml";
-import { clamp, durationLabel, formatDate, parseDate, uniqueSorted } from "./lib/dateUtils";
+import { clamp, formatDate, parseDate, uniqueSorted } from "./lib/dateUtils";
 import type { ProgrammeFilters, ProgrammeItem, ProgrammeSchedule, ProgrammeView } from "./types/programme";
 import "./styles.css";
 
@@ -33,6 +32,9 @@ const initialFilters: ProgrammeFilters = {
   criticalOnly: false,
   roadmapOnly: false,
   delayedOnly: false,
+  datePreset: "all",
+  dateStart: "",
+  dateEnd: "",
   search: "",
 };
 
@@ -87,8 +89,54 @@ function applyView(items: ProgrammeItem[], view: ProgrammeView): ProgrammeItem[]
   return items;
 }
 
-function applyFilters(items: ProgrammeItem[], filters: ProgrammeFilters): ProgrammeItem[] {
+type DateWindow = {
+  start?: Date;
+  end?: Date;
+  label: string;
+};
+
+function addDays(date: Date, days: number): Date {
+  const next = new Date(date);
+  next.setDate(next.getDate() + days);
+  return next;
+}
+
+function inputDate(value?: string): string {
+  const date = parseDate(value);
+  return date ? date.toISOString().slice(0, 10) : "";
+}
+
+function resolveDateWindow(filters: ProgrammeFilters, schedule: ProgrammeSchedule): DateWindow {
+  const statusDate = parseDate(schedule.statusDate);
+  const currentDate = parseDate(schedule.currentDate) ?? statusDate;
+  if (filters.datePreset === "status-forward" && statusDate) return { start: statusDate, label: "Status date forward" };
+  if (filters.datePreset === "current-forward" && currentDate) return { start: currentDate, label: "Current date forward" };
+  if (filters.datePreset === "next-30" && statusDate) return { start: statusDate, end: addDays(statusDate, 30), label: "Next 30 days" };
+  if (filters.datePreset === "next-60" && statusDate) return { start: statusDate, end: addDays(statusDate, 60), label: "Next 60 days" };
+  if (filters.datePreset === "next-90" && statusDate) return { start: statusDate, end: addDays(statusDate, 90), label: "Next 90 days" };
+  if (filters.datePreset === "custom") {
+    return {
+      start: filters.dateStart ? parseDate(`${filters.dateStart}T00:00:00`) : undefined,
+      end: filters.dateEnd ? parseDate(`${filters.dateEnd}T23:59:59`) : undefined,
+      label: "Custom date window",
+    };
+  }
+  return { label: "Full programme" };
+}
+
+function overlapsDateWindow(item: ProgrammeItem, window: DateWindow): boolean {
+  if (!window.start && !window.end) return true;
+  const itemStart = parseDate(item.startDate) ?? parseDate(item.finishDate);
+  const itemFinish = parseDate(item.finishDate) ?? parseDate(item.startDate);
+  if (!itemStart || !itemFinish) return false;
+  if (window.start && itemFinish < window.start) return false;
+  if (window.end && itemStart > window.end) return false;
+  return true;
+}
+
+function applyFilters(items: ProgrammeItem[], filters: ProgrammeFilters, schedule: ProgrammeSchedule): ProgrammeItem[] {
   const search = filters.search.trim().toLowerCase();
+  const dateWindow = resolveDateWindow(filters, schedule);
   return items.filter((item) => {
     if (filters.stream !== "all" && item.stream !== filters.stream) return false;
     if (filters.roadmapView !== "all" && item.roadmapView !== filters.roadmapView) return false;
@@ -100,19 +148,22 @@ function applyFilters(items: ProgrammeItem[], filters: ProgrammeFilters): Progra
     if (filters.criticalOnly && !item.isCritical) return false;
     if (filters.roadmapOnly && !item.roadmapMilestone) return false;
     if (filters.delayedOnly && !(item.delayDays && item.delayDays > 0)) return false;
+    if (!overlapsDateWindow(item, dateWindow)) return false;
     if (search && !`${item.name} ${item.stream ?? ""} ${item.approvalBody ?? ""}`.toLowerCase().includes(search)) return false;
     return true;
   });
 }
 
-function timelineBounds(items: ProgrammeItem[], schedule: ProgrammeSchedule) {
+function timelineBounds(items: ProgrammeItem[], schedule: ProgrammeSchedule, dateWindow?: DateWindow) {
   const dates = [
-    parseDate(schedule.startDate),
-    parseDate(schedule.finishDate),
+    dateWindow?.start ?? parseDate(schedule.startDate),
+    dateWindow?.end ?? parseDate(schedule.finishDate),
     ...items.flatMap((item) => [parseDate(item.startDate), parseDate(item.finishDate), parseDate(item.baselineFinish)]),
   ].filter((date): date is Date => Boolean(date));
-  const min = new Date(Math.min(...dates.map((date) => date.getTime())));
-  const max = new Date(Math.max(...dates.map((date) => date.getTime())));
+  const rawMin = new Date(Math.min(...dates.map((date) => date.getTime())));
+  const rawMax = new Date(Math.max(...dates.map((date) => date.getTime())));
+  const min = dateWindow?.start ?? rawMin;
+  const max = dateWindow?.end ?? rawMax;
   return { min, max, span: Math.max(1, max.getTime() - min.getTime()) };
 }
 
@@ -217,6 +268,30 @@ function FilterPanel({
       <SelectFilter label="Version" value={filters.version} values={options.versions} onChange={(value) => update("version", value)} />
       <SelectFilter label="Visibility" value={filters.visibility} values={options.visibility} onChange={(value) => update("visibility", value)} />
       <SelectFilter label="Status" value={filters.status} values={options.statuses} onChange={(value) => update("status", value)} />
+      <label className="field">
+        <span>Date window</span>
+        <select value={filters.datePreset} onChange={(event) => update("datePreset", event.target.value as ProgrammeFilters["datePreset"])}>
+          <option value="all">Full programme</option>
+          <option value="status-forward">Status date forward</option>
+          <option value="current-forward">Current date forward</option>
+          <option value="next-30">Next 30 days</option>
+          <option value="next-60">Next 60 days</option>
+          <option value="next-90">Next 90 days</option>
+          <option value="custom">Custom</option>
+        </select>
+      </label>
+      {filters.datePreset === "custom" ? (
+        <div className="date-range">
+          <label className="field">
+            <span>From</span>
+            <input type="date" value={filters.dateStart} onChange={(event) => update("dateStart", event.target.value)} />
+          </label>
+          <label className="field">
+            <span>To</span>
+            <input type="date" value={filters.dateEnd} onChange={(event) => update("dateEnd", event.target.value)} />
+          </label>
+        </div>
+      ) : null}
       <label className="check"><input type="checkbox" checked={filters.criticalOnly} onChange={(event) => update("criticalOnly", event.target.checked)} /> Critical only</label>
       <label className="check"><input type="checkbox" checked={filters.roadmapOnly} onChange={(event) => update("roadmapOnly", event.target.checked)} /> Roadmap milestones only</label>
       <label className="check"><input type="checkbox" checked={filters.delayedOnly} onChange={(event) => update("delayedOnly", event.target.checked)} /> Delayed only</label>
@@ -229,13 +304,15 @@ function Timeline({
   items,
   selected,
   onSelect,
+  dateWindow,
 }: {
   schedule: ProgrammeSchedule;
   items: ProgrammeItem[];
   selected?: ProgrammeItem;
   onSelect: (item: ProgrammeItem) => void;
+  dateWindow: DateWindow;
 }) {
-  const bounds = useMemo(() => timelineBounds(schedule.items, schedule), [schedule]);
+  const bounds = useMemo(() => timelineBounds(items.length ? items : schedule.items, schedule, dateWindow), [dateWindow, items, schedule]);
   const visibleItems = items.slice(0, 180);
   const statusMarker = positionFor(schedule.statusDate, bounds);
   return (
@@ -244,6 +321,7 @@ function Timeline({
         <div>
           <strong>{visibleItems.length}</strong> items shown
           {items.length > visibleItems.length ? <span> from {items.length} filtered results</span> : null}
+          <span className="window-label"> {dateWindow.label}</span>
         </div>
         <div className="legend">
           <span><i className="key summary" />Summary</span>
@@ -373,7 +451,19 @@ function App() {
   const [baselineNumber, setBaselineNumber] = useState(3);
   const [sourceXml, setSourceXml] = useState<{ xml: string; fileName: string } | undefined>();
 
-  const visibleItems = useMemo(() => applyFilters(applyView(schedule.items, view), filters), [schedule, view, filters]);
+  useEffect(() => {
+    setFilters((current) => {
+      if (current.dateStart || current.dateEnd) return current;
+      return {
+        ...current,
+        dateStart: inputDate(schedule.statusDate ?? schedule.startDate),
+        dateEnd: inputDate(schedule.finishDate),
+      };
+    });
+  }, [schedule]);
+
+  const dateWindow = useMemo(() => resolveDateWindow(filters, schedule), [filters, schedule]);
+  const visibleItems = useMemo(() => applyFilters(applyView(schedule.items, view), filters, schedule), [schedule, view, filters]);
 
   useEffect(() => {
     if (!sourceXml) return;
@@ -447,7 +537,7 @@ function App() {
               <button type="button" onClick={exportJson}><Download size={15} /> JSON</button>
             </div>
           </div>
-          <Timeline schedule={schedule} items={visibleItems} selected={selected} onSelect={setSelected} />
+          <Timeline schedule={schedule} items={visibleItems} selected={selected} onSelect={setSelected} dateWindow={dateWindow} />
           <InsightsPanel schedule={schedule} />
         </section>
       </div>

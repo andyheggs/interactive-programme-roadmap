@@ -97,6 +97,11 @@ h1 { max-width: 980px; margin-bottom: 8px; font-size: clamp(1.55rem, 3vw, 2.4rem
 .search-field { position: relative; }
 .search-field svg { position: absolute; left: 9px; bottom: 10px; color: #66766d; }
 .search-field input { padding-left: 32px; }
+.date-range {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
 .check { display: flex; align-items: center; gap: 8px; margin: 12px 0; color: #2b3832; font-size: 0.9rem; }
 
 .content { min-width: 0; padding: 18px; }
@@ -141,6 +146,14 @@ h1 { max-width: 980px; margin-bottom: 8px; font-size: clamp(1.55rem, 3vw, 2.4rem
 }
 
 .timeline-toolbar span { color: #657269; }
+.window-label {
+  display: inline-flex;
+  margin-left: 8px;
+  padding-left: 8px;
+  border-left: 1px solid #c7d1cb;
+  font-size: 0.82rem;
+  font-weight: 800;
+}
 .legend { display: flex; flex-wrap: wrap; gap: 13px; align-items: center; color: #44524b; font-size: 0.78rem; }
 .legend span { display: inline-flex; align-items: center; gap: 5px; }
 .key { display: inline-block; width: 18px; height: 8px; border-radius: 4px; background: #528b7c; }
