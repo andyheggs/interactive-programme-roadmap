@@ -16,6 +16,7 @@ import {
   SlidersHorizontal,
   X,
 } from "lucide-react";
+import { exportProgrammePdf } from "./lib/exportProgrammePdf";
 import { parseMicrosoftProjectXml } from "./lib/parseMicrosoftProjectXml";
 import { clamp, formatDate, parseDate, uniqueSorted } from "./lib/dateUtils";
 import type { ProgrammeFilters, ProgrammeItem, ProgrammeSchedule, ProgrammeView } from "./types/programme";
@@ -493,6 +494,22 @@ function App() {
     URL.revokeObjectURL(link.href);
   }
 
+  async function exportPdf() {
+    setError(undefined);
+    try {
+      await exportProgrammePdf({
+        schedule,
+        items: visibleItems,
+        viewLabel: viewLabels[view],
+        filters,
+        dateWindowLabel: dateWindow.label,
+        baselineNumber,
+      });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "The PDF report could not be generated.");
+    }
+  }
+
   return (
     <main>
       <header className="app-header">
@@ -531,6 +548,7 @@ function App() {
                   {[0, 1, 2, 3].map((baseline) => <option key={baseline} value={baseline}>Baseline {baseline}</option>)}
                 </select>
               </label>
+              <button type="button" onClick={exportPdf}><Download size={15} /> PDF</button>
               <button type="button" onClick={exportJson}><Download size={15} /> JSON</button>
             </div>
           </div>
