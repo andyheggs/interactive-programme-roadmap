@@ -27,6 +27,19 @@ const colours: Record<"ink" | "muted" | "green" | "blue" | "amber" | "red" | "de
   line: [199, 209, 203],
 };
 
+const streamPalette: Rgb[] = [
+  [204, 141, 36],
+  [49, 94, 156],
+  [36, 126, 84],
+  [147, 80, 154],
+  [196, 75, 63],
+  [52, 136, 145],
+  [121, 104, 42],
+  [82, 92, 122],
+  [172, 92, 42],
+  [78, 132, 62],
+];
+
 function setFill(doc: JsPDF, colour: Rgb) {
   doc.setFillColor(...colour);
 }
@@ -38,6 +51,12 @@ function safe(value?: string | number): string {
 
 function fileSlug(value: string): string {
   return value.replace(/[^a-z0-9]+/gi, "-").replace(/^-|-$/g, "").toLowerCase() || "programme-roadmap";
+}
+
+function streamColour(stream?: string): Rgb {
+  const key = stream || "Unassigned";
+  const index = [...key].reduce((total, char) => total + char.charCodeAt(0), 0) % streamPalette.length;
+  return streamPalette[index];
 }
 
 function addHeader(doc: JsPDF, schedule: ProgrammeSchedule, viewLabel: string) {
@@ -171,12 +190,12 @@ function governanceRows(items: ProgrammeItem[]): TableRow[] {
 
 function timelineCandidates(items: ProgrammeItem[], timelineStart: Date): ProgrammeItem[] {
   return items
-    .filter((item) => item.startDate && item.finishDate && (item.isSummary || item.roadmapMilestone || item.isMilestone || item.isCritical))
+    .filter((item) => item.roadmapMilestone && item.finishDate)
     .filter((item) => {
       const finish = parseDate(item.finishDate);
       return finish ? finish >= timelineStart : false;
     })
-    .sort((a, b) => (parseDate(a.finishDate)?.getTime() ?? 0) - (parseDate(b.finishDate)?.getTime() ?? 0));
+    .sort((a, b) => `${a.stream || "Unassigned"}`.localeCompare(`${b.stream || "Unassigned"}`) || (parseDate(a.finishDate)?.getTime() ?? 0) - (parseDate(b.finishDate)?.getTime() ?? 0));
 }
 
 function timelineItems(items: ProgrammeItem[], timelineStart: Date, limit = 30): ProgrammeItem[] {
@@ -198,26 +217,22 @@ function drawTimelineLegend(doc: JsPDF, y: number, note: string) {
   doc.setDrawColor(...colours.line);
   doc.roundedRect(12, y, 273, 24, 1.5, 1.5, "S");
 
-  drawLegendItem(doc, 18, y + 7, "Summary task", () => {
-    setFill(doc, colours.deep);
-    doc.roundedRect(18, y + 4.7, 8, 3.2, 0.6, 0.6, "F");
-  });
-  drawLegendItem(doc, 58, y + 7, "Task / in progress", () => {
-    setFill(doc, colours.blue);
-    doc.roundedRect(58, y + 5.1, 8, 2.4, 0.5, 0.5, "F");
-  });
-  drawLegendItem(doc, 108, y + 7, "Roadmap milestone", () => {
+  drawLegendItem(doc, 18, y + 7, "Roadmap milestone", () => {
     setFill(doc, colours.amber);
-    doc.triangle(112, y + 3.8, 115, y + 6.8, 112, y + 9.8, "F");
-    doc.triangle(112, y + 3.8, 109, y + 6.8, 112, y + 9.8, "F");
+    doc.triangle(22, y + 3.8, 25, y + 6.8, 22, y + 9.8, "F");
+    doc.triangle(22, y + 3.8, 19, y + 6.8, 22, y + 9.8, "F");
   });
-  drawLegendItem(doc, 163, y + 7, "Critical marker", () => {
+  drawLegendItem(doc, 72, y + 7, "Stream colour", () => {
+    setFill(doc, streamPalette[1]);
+    doc.rect(72, y + 3.9, 7, 5.8, "F");
+  });
+  drawLegendItem(doc, 122, y + 7, "Critical marker", () => {
     doc.setDrawColor(...colours.red);
-    doc.circle(167, y + 6.8, 2, "S");
+    doc.circle(126, y + 6.8, 2, "S");
   });
-  drawLegendItem(doc, 210, y + 7, "Baseline finish", () => {
+  drawLegendItem(doc, 170, y + 7, "Baseline finish", () => {
     doc.setDrawColor(130, 142, 134);
-    doc.line(214, y + 3.4, 214, y + 10.2);
+    doc.line(174, y + 3.4, 174, y + 10.2);
   });
 
   drawLegendItem(doc, 18, y + 15, "Late / delayed", () => {
@@ -227,11 +242,6 @@ function drawTimelineLegend(doc: JsPDF, y: number, note: string) {
   drawLegendItem(doc, 58, y + 15, "At risk", () => {
     setFill(doc, colours.amber);
     doc.roundedRect(58, y + 12.7, 8, 2.8, 0.5, 0.5, "F");
-  });
-  drawLegendItem(doc, 108, y + 15, "Standard milestone", () => {
-    setFill(doc, colours.blue);
-    doc.triangle(112, y + 11.8, 115, y + 14.8, 112, y + 17.8, "F");
-    doc.triangle(112, y + 11.8, 109, y + 14.8, 112, y + 17.8, "F");
   });
 
   doc.setFont("helvetica", "normal");
@@ -245,18 +255,18 @@ function drawTimeline(doc: JsPDF, items: ProgrammeItem[], schedule: ProgrammeSch
   if (!rows.length) {
     doc.setFontSize(9);
     doc.setTextColor(...colours.muted);
-    doc.text("No dated milestone, summary or critical items are available for this filtered view.", 12, y + 8);
+    doc.text("No forward-looking roadmap milestones are available for this filtered view.", 12, y + 8);
     return;
   }
 
   const dates = rows
-    .flatMap((item) => [parseDate(item.startDate), parseDate(item.finishDate), parseDate(item.baselineFinish)])
+    .flatMap((item) => [parseDate(item.finishDate), parseDate(item.baselineFinish)])
     .concat([timelineStart, parseDate(schedule.finishDate)])
     .filter((date): date is Date => Boolean(date));
   const min = timelineStart;
   const max = new Date(Math.max(...dates.map((date) => date.getTime())));
   const span = Math.max(1, max.getTime() - min.getTime());
-  const labelWidth = 72;
+  const labelWidth = 84;
   const x0 = 12 + labelWidth;
   const x1 = 285;
   const trackWidth = x1 - x0;
@@ -277,27 +287,33 @@ function drawTimeline(doc: JsPDF, items: ProgrammeItem[], schedule: ProgrammeSch
 
   rows.forEach((item, index) => {
     const rowY = y + 10 + index * 5.4;
-    const label = item.name.length > 40 ? `${item.name.slice(0, 39)}...` : item.name;
+    const label = item.name.length > 44 ? `${item.name.slice(0, 43)}...` : item.name;
+    const colour = streamColour(item.stream);
     doc.setFontSize(6.8);
+    setFill(doc, colour);
+    doc.rect(12, rowY - 2.2, 2.8, 3.8, "F");
     doc.setTextColor(...colours.ink);
-    doc.text(label, 12, rowY + 1.2);
+    doc.text(label, 17, rowY + 0.2);
+    doc.setFontSize(5.6);
+    doc.setTextColor(...colours.muted);
+    doc.text(safe(item.stream), 17, rowY + 2.6);
     doc.setDrawColor(230, 235, 231);
     doc.line(x0, rowY, x1, rowY);
 
-    const start = position(item.startDate);
     const finish = position(item.finishDate);
     if (item.baselineFinish) {
       const baseline = position(item.baselineFinish);
       doc.setDrawColor(130, 142, 134);
       doc.line(baseline, rowY - 1.8, baseline, rowY + 2.2);
     }
-    if (item.isMilestone) {
-      setFill(doc, item.roadmapMilestone ? colours.amber : colours.blue);
-      doc.triangle(finish, rowY - 2.2, finish + 2.2, rowY, finish, rowY + 2.2, "F");
-      doc.triangle(finish, rowY - 2.2, finish - 2.2, rowY, finish, rowY + 2.2, "F");
-    } else {
-      setFill(doc, item.status === "late" ? colours.red : item.status === "at-risk" ? colours.amber : item.isSummary ? colours.deep : colours.blue);
-      doc.roundedRect(Math.min(start, finish), rowY - 1.8, Math.max(2.5, Math.abs(finish - start)), item.isSummary ? 3.4 : 2.4, 0.7, 0.7, "F");
+    setFill(doc, colour);
+    doc.triangle(finish, rowY - 2.5, finish + 2.5, rowY, finish, rowY + 2.5, "F");
+    doc.triangle(finish, rowY - 2.5, finish - 2.5, rowY, finish, rowY + 2.5, "F");
+    if (item.delayDays && item.delayDays > 0) {
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(5.8);
+      doc.setTextColor(...colours.red);
+      doc.text(`+${item.delayDays}d`, Math.min(x1 - 9, finish + 4), rowY + 1.7);
     }
     if (item.isCritical) {
       doc.setDrawColor(...colours.red);
@@ -322,7 +338,7 @@ export async function exportProgrammePdf({ schedule, items, viewLabel, filters, 
   const timelineStart = new Date();
   const timelineLimit = 20;
   const timelineCandidateCount = timelineCandidates(items, timelineStart).length;
-  const timelineNote = `Timeline starts from report date (${formatDate(timelineStart.toISOString())}); showing ${Math.min(timelineLimit, timelineCandidateCount)} of ${timelineCandidateCount} forward-looking dated items.`;
+  const timelineNote = `Timeline starts from report date (${formatDate(timelineStart.toISOString())}); showing ${Math.min(timelineLimit, timelineCandidateCount)} of ${timelineCandidateCount} forward-looking roadmap milestones.`;
   drawTimelineLegend(doc, 43, timelineNote);
   drawTimeline(doc, items, schedule, 78, timelineLimit, timelineStart);
 
