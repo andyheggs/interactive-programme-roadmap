@@ -159,7 +159,22 @@ h1 { max-width: 980px; margin-bottom: 8px; font-size: clamp(1.55rem, 3vw, 2.4rem
 .key { display: inline-block; width: 18px; height: 8px; border-radius: 4px; background: #528b7c; }
 .key.summary { height: 10px; background: #365d55; }
 .key.task { background: #5c8fc3; }
+.key.complete { background: #2e7d55; }
+.key.progress { background: #3d78a9; }
+.key.risk { background: #c58b28; }
+.key.late { background: #b33a32; }
+.key.critical {
+  width: 16px;
+  height: 10px;
+  border: 2px solid #7d1712;
+  background: transparent;
+}
 .key.baseline { width: 2px; height: 14px; border-left: 2px dashed #7f8b84; background: transparent; border-radius: 0; }
+.key.status { width: 2px; height: 14px; background: #d29b24; border-radius: 0; }
+.legend-roadmap {
+  color: #d29b24;
+  fill: #d29b24;
+}
 
 .timeline-scale { color: #68756d; font-size: 0.8rem; font-weight: 800; background: #fafbf9; }
 .timeline { position: relative; max-height: 62vh; overflow: auto; }

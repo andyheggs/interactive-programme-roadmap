@@ -9,7 +9,6 @@ import {
   Filter,
   GitBranch,
   Layers,
-  Lock,
   Milestone,
   Search,
   ShieldCheck,
@@ -32,6 +31,7 @@ const initialFilters: ProgrammeFilters = {
   status: "all",
   criticalOnly: false,
   roadmapOnly: false,
+  showSummaryTasks: true,
   delayedOnly: false,
   datePreset: "all",
   dateStart: "",
@@ -145,6 +145,7 @@ function applyFilters(items: ProgrammeItem[], filters: ProgrammeFilters, schedul
     if (filters.status !== "all" && item.status !== filters.status) return false;
     if (filters.criticalOnly && !item.isCritical) return false;
     if (filters.roadmapOnly && !item.roadmapMilestone) return false;
+    if (!filters.showSummaryTasks && item.isSummary) return false;
     if (filters.delayedOnly && !(item.delayDays && item.delayDays > 0)) return false;
     if (!overlapsDateWindow(item, dateWindow)) return false;
     if (search && !`${item.name} ${item.stream ?? ""} ${item.approvalBody ?? ""}`.toLowerCase().includes(search)) return false;
@@ -292,6 +293,7 @@ function FilterPanel({
       ) : null}
       <label className="check"><input type="checkbox" checked={filters.criticalOnly} onChange={(event) => update("criticalOnly", event.target.checked)} /> Critical only</label>
       <label className="check"><input type="checkbox" checked={filters.roadmapOnly} onChange={(event) => update("roadmapOnly", event.target.checked)} /> Roadmap milestones only</label>
+      <label className="check"><input type="checkbox" checked={filters.showSummaryTasks} onChange={(event) => update("showSummaryTasks", event.target.checked)} /> Show summary tasks</label>
       <label className="check"><input type="checkbox" checked={filters.delayedOnly} onChange={(event) => update("delayedOnly", event.target.checked)} /> Delayed only</label>
     </aside>
   );
@@ -325,7 +327,14 @@ function Timeline({
           <span><i className="key summary" />Summary</span>
           <span><i className="key task" />Task</span>
           <span><Diamond size={13} />Milestone</span>
+          <span><Diamond className="legend-roadmap" size={13} />Roadmap milestone</span>
+          <span><i className="key complete" />Complete</span>
+          <span><i className="key progress" />In progress</span>
+          <span><i className="key risk" />At risk</span>
+          <span><i className="key late" />Late / delayed</span>
+          <span><i className="key critical" />Critical</span>
           <span><i className="key baseline" />Baseline</span>
+          <span><i className="key status" />Status date</span>
         </div>
       </div>
       <div className="timeline-scale">
@@ -349,7 +358,6 @@ function Timeline({
               <span className="row-label" style={{ paddingLeft: `${Math.min(item.outlineLevel - 1, 5) * 14}px` }}>
                 {item.childUids?.length ? <ChevronRight size={14} /> : <span className="indent-spacer" />}
                 <span className="row-name">{item.name}</span>
-                {item.visibility === "Restricted" ? <Lock size={13} /> : null}
               </span>
               <span className="row-track">
                 {item.baselineFinish ? <span className="baseline-marker" style={{ left: `${baseline}%` }} /> : null}

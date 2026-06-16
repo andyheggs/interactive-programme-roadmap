@@ -109,6 +109,7 @@ export type ProgrammeFilters = {
   status: string;
   criticalOnly: boolean;
   roadmapOnly: boolean;
+  showSummaryTasks: boolean;
   delayedOnly: boolean;
   datePreset: "all" | "status-forward" | "current-forward" | "next-30" | "next-60" | "next-90" | "custom";
   dateStart: string;
