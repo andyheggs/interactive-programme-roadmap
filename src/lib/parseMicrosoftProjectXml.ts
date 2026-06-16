@@ -27,6 +27,10 @@ function directChildren(node: Element | Document, tag: string): Element[] {
   return Array.from(node.getElementsByTagName(tag)).filter((child) => child.parentElement === node);
 }
 
+function projectText(root: Element, tag: string): string | undefined {
+  return directChildren(root, tag)[0]?.textContent?.trim() || undefined;
+}
+
 function asBool(value?: string): boolean {
   return value === "1" || value?.toLowerCase() === "true" || value?.toLowerCase() === "yes";
 }
@@ -211,7 +215,11 @@ export function parseMicrosoftProjectXml(xml: string, sourceFileName?: string, b
   const tasksNode = doc.getElementsByTagName("Tasks")[0];
   if (!tasksNode) throw new Error("No Tasks node was found in this Microsoft Project XML file.");
 
-  const statusDate = childText(doc.documentElement, "StatusDate") ?? childText(doc.documentElement, "CurrentDate");
+  const projectStartDate = projectText(doc.documentElement, "StartDate");
+  const projectFinishDate = projectText(doc.documentElement, "FinishDate");
+  const projectStatusDate = projectText(doc.documentElement, "StatusDate");
+  const projectCurrentDate = projectText(doc.documentElement, "CurrentDate");
+  const statusDate = projectStatusDate ?? projectCurrentDate;
   const items = directChildren(tasksNode, "Task")
     .filter((task) => childText(task, "UID") && childText(task, "Name") && !asBool(childText(task, "IsNull")))
     .map((task) => {
@@ -266,13 +274,13 @@ export function parseMicrosoftProjectXml(xml: string, sourceFileName?: string, b
 
   const normalisedItems = buildSuccessors(buildHierarchy(items));
   return {
-    title: childText(doc.documentElement, "Title") ?? childText(doc.documentElement, "Name") ?? "Imported programme",
-    name: childText(doc.documentElement, "Name"),
-    startDate: childText(doc.documentElement, "StartDate"),
-    finishDate: childText(doc.documentElement, "FinishDate"),
+    title: projectText(doc.documentElement, "Title") ?? projectText(doc.documentElement, "Name") ?? "Imported programme",
+    name: projectText(doc.documentElement, "Name"),
+    startDate: projectStartDate,
+    finishDate: projectFinishDate,
     statusDate,
-    currentDate: childText(doc.documentElement, "CurrentDate"),
-    multipleCriticalPaths: asBool(childText(doc.documentElement, "MultipleCriticalPaths")),
+    currentDate: projectCurrentDate,
+    multipleCriticalPaths: asBool(projectText(doc.documentElement, "MultipleCriticalPaths")),
     items: normalisedItems,
     resources,
     importedAt: new Date().toISOString(),

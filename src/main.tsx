@@ -71,9 +71,6 @@ function makeSampleSchedule(): ProgrammeSchedule {
   ];
   return {
     title: "Interactive Programme Roadmap",
-    startDate: "2026-01-09T08:00:00",
-    finishDate: "2027-03-11T17:00:00",
-    statusDate: "2026-06-15T17:00:00",
     items,
     resources: [],
     importedAt: new Date().toISOString(),
