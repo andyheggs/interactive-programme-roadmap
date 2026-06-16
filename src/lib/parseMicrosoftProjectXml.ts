@@ -8,7 +8,7 @@ import type {
 } from "../types/programme";
 import { daysBetween, parseDate } from "./dateUtils";
 
-const CUSTOM_FIELDS: Record<string, keyof ProgrammeItem> = {
+const FALLBACK_CUSTOM_FIELDS: Record<string, keyof ProgrammeItem> = {
   "188743731": "stream",
   "188743734": "roadmapMilestone",
   "188743737": "milestoneType",
@@ -40,7 +40,43 @@ function asNumber(value?: string): number | undefined {
 function resolveLookupValue(value?: string, valueGuid?: string, lookupByGuid?: Map<string, string>): string | undefined {
   if (!value) return undefined;
   if (valueGuid && lookupByGuid?.has(valueGuid)) return lookupByGuid.get(valueGuid);
+  if (lookupByGuid?.has(value)) return lookupByGuid.get(value);
   return value;
+}
+
+function normaliseFieldLabel(value?: string): string {
+  return (value ?? "")
+    .toLowerCase()
+    .replace(/\([^)]*\)/g, "")
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
+}
+
+function customFieldForDefinition(fieldName?: string, alias?: string): keyof ProgrammeItem | undefined {
+  const labels = [normaliseFieldLabel(alias), normaliseFieldLabel(fieldName)];
+  if (labels.some((label) => label === "stream" || label === "text1")) return "stream";
+  if (labels.some((label) => label === "roadmap milestone" || label === "text2")) return "roadmapMilestone";
+  if (labels.some((label) => label === "milestone type" || label === "text3")) return "milestoneType";
+  if (labels.some((label) => label === "approval body" || label === "text4")) return "approvalBody";
+  if (labels.some((label) => label === "version" || label === "text5")) return "version";
+  if (labels.some((label) => label === "visibility" || label === "text6")) return "visibility";
+  if (labels.some((label) => label === "roadmap view" || label === "text7")) return "roadmapView";
+  if (labels.some((label) => label === "discussed" || label === "flag1")) return "discussed";
+  return undefined;
+}
+
+function buildCustomFieldMap(root: Document): Map<string, keyof ProgrammeItem> {
+  const fields = new Map<string, keyof ProgrammeItem>(Object.entries(FALLBACK_CUSTOM_FIELDS));
+  const definitionsNode = root.getElementsByTagName("ExtendedAttributes")[0];
+  if (!definitionsNode) return fields;
+
+  directChildren(definitionsNode, "ExtendedAttribute").forEach((definition) => {
+    const fieldId = childText(definition, "FieldID");
+    const mappedField = customFieldForDefinition(childText(definition, "FieldName"), childText(definition, "Alias"));
+    if (fieldId && mappedField) fields.set(fieldId, mappedField);
+  });
+
+  return fields;
 }
 
 function statusFor(item: Pick<ProgrammeItem, "percentComplete" | "finishDate" | "isCritical" | "delayDays">, statusDate?: string): ProgrammeStatus {
@@ -115,10 +151,15 @@ function buildAssignments(root: Document, resources: ProgrammeResource[]): Map<s
   return assignments;
 }
 
-function applyCustomFields(task: Element, item: ProgrammeItem, lookup: Map<string, string>): ProgrammeItem {
+function applyCustomFields(
+  task: Element,
+  item: ProgrammeItem,
+  lookup: Map<string, string>,
+  customFields: Map<string, keyof ProgrammeItem>,
+): ProgrammeItem {
   directChildren(task, "ExtendedAttribute").forEach((attribute) => {
     const fieldId = childText(attribute, "FieldID");
-    const fieldName = CUSTOM_FIELDS[fieldId ?? ""];
+    const fieldName = fieldId ? customFields.get(fieldId) : undefined;
     if (!fieldName) return;
     const raw = resolveLookupValue(childText(attribute, "Value"), childText(attribute, "ValueGUID"), lookup);
     if (fieldName === "roadmapMilestone") item.roadmapMilestone = raw?.toLowerCase() === "yes" || asBool(raw);
@@ -164,6 +205,7 @@ export function parseMicrosoftProjectXml(xml: string, sourceFileName?: string, b
   if (parserError) throw new Error(parserError.textContent ?? "The XML could not be parsed.");
 
   const lookup = buildLookup(doc);
+  const customFields = buildCustomFieldMap(doc);
   const resources = parseResources(doc);
   const assignments = buildAssignments(doc, resources);
   const tasksNode = doc.getElementsByTagName("Tasks")[0];
@@ -217,7 +259,7 @@ export function parseMicrosoftProjectXml(xml: string, sourceFileName?: string, b
         delayDays,
         status: "future",
       };
-      applyCustomFields(task, item, lookup);
+      applyCustomFields(task, item, lookup, customFields);
       item.status = statusFor(item, statusDate);
       return item;
     });
