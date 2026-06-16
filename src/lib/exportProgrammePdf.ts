@@ -169,10 +169,18 @@ function governanceRows(items: ProgrammeItem[]): TableRow[] {
     ]);
 }
 
-function timelineItems(items: ProgrammeItem[], limit = 30): ProgrammeItem[] {
+function timelineCandidates(items: ProgrammeItem[], timelineStart: Date): ProgrammeItem[] {
   return items
     .filter((item) => item.startDate && item.finishDate && (item.isSummary || item.roadmapMilestone || item.isMilestone || item.isCritical))
-    .sort((a, b) => (parseDate(a.startDate)?.getTime() ?? 0) - (parseDate(b.startDate)?.getTime() ?? 0))
+    .filter((item) => {
+      const finish = parseDate(item.finishDate);
+      return finish ? finish >= timelineStart : false;
+    })
+    .sort((a, b) => (parseDate(a.finishDate)?.getTime() ?? 0) - (parseDate(b.finishDate)?.getTime() ?? 0));
+}
+
+function timelineItems(items: ProgrammeItem[], timelineStart: Date, limit = 30): ProgrammeItem[] {
+  return timelineCandidates(items, timelineStart)
     .slice(0, limit);
 }
 
@@ -184,11 +192,11 @@ function drawLegendItem(doc: JsPDF, x: number, y: number, label: string, draw: (
   doc.text(label, x + 11, y + 1.2);
 }
 
-function drawTimelineLegend(doc: JsPDF, y: number) {
+function drawTimelineLegend(doc: JsPDF, y: number, note: string) {
   doc.setFillColor(...colours.pale);
-  doc.roundedRect(12, y, 273, 18, 1.5, 1.5, "F");
+  doc.roundedRect(12, y, 273, 24, 1.5, 1.5, "F");
   doc.setDrawColor(...colours.line);
-  doc.roundedRect(12, y, 273, 18, 1.5, 1.5, "S");
+  doc.roundedRect(12, y, 273, 24, 1.5, 1.5, "S");
 
   drawLegendItem(doc, 18, y + 7, "Summary task", () => {
     setFill(doc, colours.deep);
@@ -225,10 +233,15 @@ function drawTimelineLegend(doc: JsPDF, y: number) {
     doc.triangle(112, y + 11.8, 115, y + 14.8, 112, y + 17.8, "F");
     doc.triangle(112, y + 11.8, 109, y + 14.8, 112, y + 17.8, "F");
   });
+
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(7.1);
+  doc.setTextColor(...colours.muted);
+  doc.text(note, 18, y + 21.4);
 }
 
-function drawTimeline(doc: JsPDF, items: ProgrammeItem[], schedule: ProgrammeSchedule, y: number, limit = 30) {
-  const rows = timelineItems(items, limit);
+function drawTimeline(doc: JsPDF, items: ProgrammeItem[], schedule: ProgrammeSchedule, y: number, limit: number, timelineStart: Date) {
+  const rows = timelineItems(items, timelineStart, limit);
   if (!rows.length) {
     doc.setFontSize(9);
     doc.setTextColor(...colours.muted);
@@ -238,9 +251,9 @@ function drawTimeline(doc: JsPDF, items: ProgrammeItem[], schedule: ProgrammeSch
 
   const dates = rows
     .flatMap((item) => [parseDate(item.startDate), parseDate(item.finishDate), parseDate(item.baselineFinish)])
-    .concat([parseDate(schedule.startDate), parseDate(schedule.finishDate)])
+    .concat([timelineStart, parseDate(schedule.finishDate)])
     .filter((date): date is Date => Boolean(date));
-  const min = new Date(Math.min(...dates.map((date) => date.getTime())));
+  const min = timelineStart;
   const max = new Date(Math.max(...dates.map((date) => date.getTime())));
   const span = Math.max(1, max.getTime() - min.getTime());
   const labelWidth = 72;
@@ -291,13 +304,6 @@ function drawTimeline(doc: JsPDF, items: ProgrammeItem[], schedule: ProgrammeSch
       doc.circle(finish + 3, rowY, 1.2, "S");
     }
   });
-
-  if (items.length > rows.length) {
-    doc.setFont("helvetica", "normal");
-    doc.setFontSize(7);
-    doc.setTextColor(...colours.muted);
-    doc.text(`Showing ${rows.length} highest-value dated items from ${items.length} filtered items.`, 12, 196);
-  }
 }
 
 export async function exportProgrammePdf({ schedule, items, viewLabel, filters, dateWindowLabel, baselineNumber }: PdfExportOptions) {
@@ -313,8 +319,12 @@ export async function exportProgrammePdf({ schedule, items, viewLabel, filters, 
   doc.addPage();
   addHeader(doc, schedule, viewLabel);
   addSectionTitle(doc, "Simplified Roadmap Timeline", 36);
-  drawTimelineLegend(doc, 43);
-  drawTimeline(doc, items, schedule, 72, 22);
+  const timelineStart = new Date();
+  const timelineLimit = 20;
+  const timelineCandidateCount = timelineCandidates(items, timelineStart).length;
+  const timelineNote = `Timeline starts from report date (${formatDate(timelineStart.toISOString())}); showing ${Math.min(timelineLimit, timelineCandidateCount)} of ${timelineCandidateCount} forward-looking dated items.`;
+  drawTimelineLegend(doc, 43, timelineNote);
+  drawTimeline(doc, items, schedule, 78, timelineLimit, timelineStart);
 
   doc.addPage();
   addHeader(doc, schedule, viewLabel);
