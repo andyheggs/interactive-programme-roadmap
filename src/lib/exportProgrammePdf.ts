@@ -29,16 +29,28 @@ const colours: Record<"ink" | "muted" | "green" | "blue" | "amber" | "red" | "de
 };
 
 const streamPalette: Rgb[] = [
-  [204, 141, 36],
   [49, 94, 156],
+  [52, 136, 145],
   [36, 126, 84],
   [147, 80, 154],
   [196, 75, 63],
-  [52, 136, 145],
   [121, 104, 42],
   [82, 92, 122],
-  [172, 92, 42],
   [78, 132, 62],
+  [90, 118, 150],
+  [128, 83, 120],
+];
+
+const atRiskColour: Rgb = [92, 104, 122];
+
+const preferredStreamOrder = [
+  "legislation",
+  "secondary regulations",
+  "platform",
+  "operations & governance",
+  "proof of concept and first adopters",
+  "sales and adoption",
+  "knowledge",
 ];
 
 function setFill(doc: JsPDF, colour: Rgb) {
@@ -65,6 +77,16 @@ function streamColour(stream?: string): Rgb {
   if (lower.includes("communication") || lower.includes("engagement")) return streamPalette[5];
   const index = [...key].reduce((total, char) => total + char.charCodeAt(0), 0) % streamPalette.length;
   return streamPalette[index];
+}
+
+function normaliseStream(value: string): string {
+  return value.toLowerCase().replace(/\band\b/g, "&").replace(/[^a-z0-9&]+/g, " ").replace(/\s+/g, " ").trim();
+}
+
+function streamOrderIndex(stream: string): number {
+  const normalised = normaliseStream(stream);
+  const index = preferredStreamOrder.findIndex((preferred) => normalised.includes(normaliseStream(preferred)));
+  return index === -1 ? preferredStreamOrder.length : index;
 }
 
 function addHeader(doc: JsPDF, schedule: ProgrammeSchedule, viewLabel: string) {
@@ -205,7 +227,7 @@ function timelineCandidates(items: ProgrammeItem[], timelineStart: Date): Progra
       const finish = parseDate(item.finishDate);
       return finish ? finish >= timelineStart : false;
     })
-    .sort((a, b) => `${a.stream || "Unassigned"}`.localeCompare(`${b.stream || "Unassigned"}`) || (parseDate(a.finishDate)?.getTime() ?? 0) - (parseDate(b.finishDate)?.getTime() ?? 0));
+    .sort((a, b) => streamOrderIndex(a.stream || "Unassigned") - streamOrderIndex(b.stream || "Unassigned") || `${a.stream || "Unassigned"}`.localeCompare(`${b.stream || "Unassigned"}`) || (parseDate(a.finishDate)?.getTime() ?? 0) - (parseDate(b.finishDate)?.getTime() ?? 0));
 }
 
 function timelineItems(items: ProgrammeItem[], timelineStart: Date, limit = 30): ProgrammeItem[] {
@@ -251,28 +273,20 @@ function drawTimelineLegend(doc: JsPDF, y: number, note: string) {
     doc.triangle(left + 10, y + 3.8, left + 13, y + 6.8, left + 10, y + 9.8, "F");
     doc.triangle(left + 10, y + 3.8, left + 7, y + 6.8, left + 10, y + 9.8, "F");
   });
-  drawLegendItem(doc, left + 60, y + 7, "Stream colour", () => {
-    setFill(doc, streamPalette[1]);
-    doc.rect(left + 60, y + 3.9, 7, 5.8, "F");
-  });
-  drawLegendItem(doc, left + 110, y + 7, "Baseline finish", () => {
-    doc.setDrawColor(130, 142, 134);
-    doc.line(left + 114, y + 3.4, left + 114, y + 10.2);
-  });
 
-  drawLegendItem(doc, left + 6, y + 15, "Late / delayed", () => {
+  drawLegendItem(doc, left + 62, y + 7, "Late / delayed", () => {
     setFill(doc, colours.red);
-    doc.roundedRect(left + 6, y + 12.7, 8, 2.8, 0.5, 0.5, "F");
+    doc.roundedRect(left + 62, y + 4.7, 8, 2.8, 0.5, 0.5, "F");
   });
-  drawLegendItem(doc, left + 46, y + 15, "At risk", () => {
-    setFill(doc, colours.amber);
-    doc.roundedRect(left + 46, y + 12.7, 8, 2.8, 0.5, 0.5, "F");
+  drawLegendItem(doc, left + 108, y + 7, "At risk", () => {
+    setFill(doc, atRiskColour);
+    doc.roundedRect(left + 108, y + 4.7, 8, 2.8, 0.5, 0.5, "F");
   });
 
   doc.setFont("helvetica", "normal");
   doc.setFontSize(7.1);
   doc.setTextColor(...colours.muted);
-  doc.text(note, left + 6, y + 21.4);
+  doc.text(note, left + 6, y + 17.4);
 }
 
 function drawTimeline(doc: JsPDF, items: ProgrammeItem[], schedule: ProgrammeSchedule, viewLabel: string, title: string, y: number, limit: number, timelineStart: Date) {
@@ -311,7 +325,7 @@ function drawTimeline(doc: JsPDF, items: ProgrammeItem[], schedule: ProgrammeSch
       groups.set(stream, streamItems);
       return groups;
     }, new Map<string, ProgrammeItem[]>())
-  ).sort(([, aItems], [, bItems]) => (parseDate(aItems[0]?.finishDate)?.getTime() ?? 0) - (parseDate(bItems[0]?.finishDate)?.getTime() ?? 0));
+  ).sort(([aStream, aItems], [bStream, bItems]) => streamOrderIndex(aStream) - streamOrderIndex(bStream) || aStream.localeCompare(bStream) || (parseDate(aItems[0]?.finishDate)?.getTime() ?? 0) - (parseDate(bItems[0]?.finishDate)?.getTime() ?? 0));
   const assignedStreamColours = streams.reduce((map, [stream], index) => {
     map.set(stream, streamPalette[index % streamPalette.length]);
     return map;
@@ -350,7 +364,8 @@ function drawTimeline(doc: JsPDF, items: ProgrammeItem[], schedule: ProgrammeSch
     }
   };
 
-  const laneHeightFor = (streamItems: ProgrammeItem[]) => Math.min(maxLaneHeight, Math.max(22, 12 + streamItems.length * (pageWidth > 300 ? 6 : 5.2)));
+  const rowHeight = pageWidth > 300 ? 8.2 : 6.6;
+  const laneHeightFor = (streamItems: ProgrammeItem[]) => Math.min(maxLaneHeight, Math.max(28, 14 + streamItems.length * rowHeight));
   const startNewTimelinePage = (continued: boolean) => {
     doc.addPage();
     addHeader(doc, schedule, viewLabel);
@@ -368,7 +383,7 @@ function drawTimeline(doc: JsPDF, items: ProgrammeItem[], schedule: ProgrammeSch
       cursorY = chartTop;
     }
     const laneBottom = cursorY + laneHeight;
-    const rowStep = Math.max(3.8, Math.min(pageWidth > 300 ? 6 : 5.2, (laneHeight - 10) / Math.max(streamItems.length, 1)));
+    const rowStep = Math.max(pageWidth > 300 ? 7.4 : 6, Math.min(rowHeight, (laneHeight - 12) / Math.max(streamItems.length, 1)));
 
     setFill(doc, tint(colour));
     doc.rect(12, cursorY, pageWidth - 24, laneHeight, "F");
@@ -398,12 +413,12 @@ function drawTimeline(doc: JsPDF, items: ProgrammeItem[], schedule: ProgrammeSch
       setFill(doc, colours.amber);
       doc.triangle(finish, rowY - 2.7, finish + 2.7, rowY, finish, rowY + 2.7, "F");
       doc.triangle(finish, rowY - 2.7, finish - 2.7, rowY, finish, rowY + 2.7, "F");
-      const label = item.name.length > (pageWidth > 300 ? 66 : 42) ? `${item.name.slice(0, pageWidth > 300 ? 65 : 41)}...` : item.name;
+      const label = item.name.length > (pageWidth > 300 ? 72 : 46) ? `${item.name.slice(0, pageWidth > 300 ? 71 : 45)}...` : item.name;
       doc.setFont("helvetica", "normal");
-      doc.setFontSize(pageWidth > 300 ? 5.5 : 4.8);
+      doc.setFontSize(pageWidth > 300 ? 7 : 5.6);
       doc.setTextColor(...colours.ink);
-      const labelX = Math.min(x1 - (pageWidth > 300 ? 58 : 38), finish + 5.5);
-      doc.text(label, labelX, rowY + 1.5);
+      const labelX = Math.min(x1 - (pageWidth > 300 ? 74 : 46), finish + 5.5);
+      doc.text(label, labelX, rowY + 2);
       if (item.delayDays && item.delayDays > 0) {
         doc.setFont("helvetica", "bold");
         doc.setFontSize(5.4);
