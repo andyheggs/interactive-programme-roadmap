@@ -169,15 +169,66 @@ function governanceRows(items: ProgrammeItem[]): TableRow[] {
     ]);
 }
 
-function timelineItems(items: ProgrammeItem[]): ProgrammeItem[] {
+function timelineItems(items: ProgrammeItem[], limit = 30): ProgrammeItem[] {
   return items
     .filter((item) => item.startDate && item.finishDate && (item.isSummary || item.roadmapMilestone || item.isMilestone || item.isCritical))
     .sort((a, b) => (parseDate(a.startDate)?.getTime() ?? 0) - (parseDate(b.startDate)?.getTime() ?? 0))
-    .slice(0, 30);
+    .slice(0, limit);
 }
 
-function drawTimeline(doc: JsPDF, items: ProgrammeItem[], schedule: ProgrammeSchedule, y: number) {
-  const rows = timelineItems(items);
+function drawLegendItem(doc: JsPDF, x: number, y: number, label: string, draw: () => void) {
+  draw();
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(7.3);
+  doc.setTextColor(...colours.ink);
+  doc.text(label, x + 11, y + 1.2);
+}
+
+function drawTimelineLegend(doc: JsPDF, y: number) {
+  doc.setFillColor(...colours.pale);
+  doc.roundedRect(12, y, 273, 18, 1.5, 1.5, "F");
+  doc.setDrawColor(...colours.line);
+  doc.roundedRect(12, y, 273, 18, 1.5, 1.5, "S");
+
+  drawLegendItem(doc, 18, y + 7, "Summary task", () => {
+    setFill(doc, colours.deep);
+    doc.roundedRect(18, y + 4.7, 8, 3.2, 0.6, 0.6, "F");
+  });
+  drawLegendItem(doc, 58, y + 7, "Task / in progress", () => {
+    setFill(doc, colours.blue);
+    doc.roundedRect(58, y + 5.1, 8, 2.4, 0.5, 0.5, "F");
+  });
+  drawLegendItem(doc, 108, y + 7, "Roadmap milestone", () => {
+    setFill(doc, colours.amber);
+    doc.triangle(112, y + 3.8, 115, y + 6.8, 112, y + 9.8, "F");
+    doc.triangle(112, y + 3.8, 109, y + 6.8, 112, y + 9.8, "F");
+  });
+  drawLegendItem(doc, 163, y + 7, "Critical marker", () => {
+    doc.setDrawColor(...colours.red);
+    doc.circle(167, y + 6.8, 2, "S");
+  });
+  drawLegendItem(doc, 210, y + 7, "Baseline finish", () => {
+    doc.setDrawColor(130, 142, 134);
+    doc.line(214, y + 3.4, 214, y + 10.2);
+  });
+
+  drawLegendItem(doc, 18, y + 15, "Late / delayed", () => {
+    setFill(doc, colours.red);
+    doc.roundedRect(18, y + 12.7, 8, 2.8, 0.5, 0.5, "F");
+  });
+  drawLegendItem(doc, 58, y + 15, "At risk", () => {
+    setFill(doc, colours.amber);
+    doc.roundedRect(58, y + 12.7, 8, 2.8, 0.5, 0.5, "F");
+  });
+  drawLegendItem(doc, 108, y + 15, "Standard milestone", () => {
+    setFill(doc, colours.blue);
+    doc.triangle(112, y + 11.8, 115, y + 14.8, 112, y + 17.8, "F");
+    doc.triangle(112, y + 11.8, 109, y + 14.8, 112, y + 17.8, "F");
+  });
+}
+
+function drawTimeline(doc: JsPDF, items: ProgrammeItem[], schedule: ProgrammeSchedule, y: number, limit = 30) {
+  const rows = timelineItems(items, limit);
   if (!rows.length) {
     doc.setFontSize(9);
     doc.setTextColor(...colours.muted);
@@ -205,6 +256,7 @@ function drawTimeline(doc: JsPDF, items: ProgrammeItem[], schedule: ProgrammeSch
   doc.setFont("helvetica", "normal");
   doc.setFontSize(7);
   doc.setTextColor(...colours.muted);
+  doc.setFont("helvetica", "bold");
   doc.text(formatDate(min.toISOString()), x0, y);
   doc.text(formatDate(max.toISOString()), x1, y, { align: "right" });
   doc.setDrawColor(...colours.line);
@@ -239,6 +291,13 @@ function drawTimeline(doc: JsPDF, items: ProgrammeItem[], schedule: ProgrammeSch
       doc.circle(finish + 3, rowY, 1.2, "S");
     }
   });
+
+  if (items.length > rows.length) {
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(7);
+    doc.setTextColor(...colours.muted);
+    doc.text(`Showing ${rows.length} highest-value dated items from ${items.length} filtered items.`, 12, 196);
+  }
 }
 
 export async function exportProgrammePdf({ schedule, items, viewLabel, filters, dateWindowLabel, baselineNumber }: PdfExportOptions) {
@@ -251,8 +310,11 @@ export async function exportProgrammePdf({ schedule, items, viewLabel, filters, 
   addSectionTitle(doc, "Report Scope", 83);
   table(doc, autoTable, 89, ["Filter", "Value", "Filter", "Value"], filterRows(filters, viewLabel, dateWindowLabel, baselineNumber));
 
-  addSectionTitle(doc, "Simplified Roadmap Timeline", 132);
-  drawTimeline(doc, items, schedule, 140);
+  doc.addPage();
+  addHeader(doc, schedule, viewLabel);
+  addSectionTitle(doc, "Simplified Roadmap Timeline", 36);
+  drawTimelineLegend(doc, 43);
+  drawTimeline(doc, items, schedule, 72, 22);
 
   doc.addPage();
   addHeader(doc, schedule, viewLabel);
