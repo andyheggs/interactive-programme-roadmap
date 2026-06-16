@@ -9,6 +9,7 @@ type PdfExportOptions = {
   filters: ProgrammeFilters;
   dateWindowLabel: string;
   baselineNumber: number;
+  output?: "board-pack" | "poster";
 };
 
 type TableRow = Array<string | number>;
@@ -60,8 +61,9 @@ function streamColour(stream?: string): Rgb {
 }
 
 function addHeader(doc: JsPDF, schedule: ProgrammeSchedule, viewLabel: string) {
+  const pageWidth = doc.internal.pageSize.getWidth();
   setFill(doc, colours.deep);
-  doc.rect(0, 0, 297, 25, "F");
+  doc.rect(0, 0, pageWidth, 25, "F");
   doc.setTextColor(255, 255, 255);
   doc.setFont("helvetica", "bold");
   doc.setFontSize(15);
@@ -69,17 +71,18 @@ function addHeader(doc: JsPDF, schedule: ProgrammeSchedule, viewLabel: string) {
   doc.setFont("helvetica", "normal");
   doc.setFontSize(9);
   doc.text(`${viewLabel} report`, 12, 18);
-  doc.text(`Generated ${formatDate(new Date().toISOString())}`, 250, 18, { align: "right" });
+  doc.text(`Generated ${formatDate(new Date().toISOString())}`, pageWidth - 35, 18, { align: "right" });
   doc.setTextColor(...colours.ink);
 }
 
 function addSectionTitle(doc: JsPDF, title: string, y: number) {
+  const pageWidth = doc.internal.pageSize.getWidth();
   doc.setFont("helvetica", "bold");
   doc.setFontSize(12);
   doc.setTextColor(...colours.ink);
   doc.text(title, 12, y);
   doc.setDrawColor(...colours.line);
-  doc.line(12, y + 3, 285, y + 3);
+  doc.line(12, y + 3, pageWidth - 12, y + 3);
 }
 
 function table(doc: JsPDF, autoTable: AutoTable, y: number, head: string[], body: TableRow[]) {
@@ -203,6 +206,22 @@ function timelineItems(items: ProgrammeItem[], timelineStart: Date, limit = 30):
     .slice(0, limit);
 }
 
+function monthStart(date: Date): Date {
+  return new Date(date.getFullYear(), date.getMonth(), 1);
+}
+
+function addMonths(date: Date, months: number): Date {
+  return new Date(date.getFullYear(), date.getMonth() + months, 1);
+}
+
+function monthLabel(date: Date): string {
+  return date.toLocaleString("en-GB", { month: "short" }).toUpperCase();
+}
+
+function tint(colour: Rgb, amount = 0.78): Rgb {
+  return colour.map((channel) => Math.round(channel + (255 - channel) * amount)) as Rgb;
+}
+
 function drawLegendItem(doc: JsPDF, x: number, y: number, label: string, draw: () => void) {
   draw();
   doc.setFont("helvetica", "normal");
@@ -212,45 +231,50 @@ function drawLegendItem(doc: JsPDF, x: number, y: number, label: string, draw: (
 }
 
 function drawTimelineLegend(doc: JsPDF, y: number, note: string) {
+  const pageWidth = doc.internal.pageSize.getWidth();
+  const legendWidth = pageWidth - 24;
+  const left = 12;
   doc.setFillColor(...colours.pale);
-  doc.roundedRect(12, y, 273, 24, 1.5, 1.5, "F");
+  doc.roundedRect(left, y, legendWidth, 24, 1.5, 1.5, "F");
   doc.setDrawColor(...colours.line);
-  doc.roundedRect(12, y, 273, 24, 1.5, 1.5, "S");
+  doc.roundedRect(left, y, legendWidth, 24, 1.5, 1.5, "S");
 
-  drawLegendItem(doc, 18, y + 7, "Roadmap milestone", () => {
+  drawLegendItem(doc, left + 6, y + 7, "Roadmap milestone", () => {
     setFill(doc, colours.amber);
-    doc.triangle(22, y + 3.8, 25, y + 6.8, 22, y + 9.8, "F");
-    doc.triangle(22, y + 3.8, 19, y + 6.8, 22, y + 9.8, "F");
+    doc.triangle(left + 10, y + 3.8, left + 13, y + 6.8, left + 10, y + 9.8, "F");
+    doc.triangle(left + 10, y + 3.8, left + 7, y + 6.8, left + 10, y + 9.8, "F");
   });
-  drawLegendItem(doc, 72, y + 7, "Stream colour", () => {
+  drawLegendItem(doc, left + 60, y + 7, "Stream colour", () => {
     setFill(doc, streamPalette[1]);
-    doc.rect(72, y + 3.9, 7, 5.8, "F");
+    doc.rect(left + 60, y + 3.9, 7, 5.8, "F");
   });
-  drawLegendItem(doc, 122, y + 7, "Critical marker", () => {
+  drawLegendItem(doc, left + 110, y + 7, "Critical marker", () => {
     doc.setDrawColor(...colours.red);
-    doc.circle(126, y + 6.8, 2, "S");
+    doc.circle(left + 114, y + 6.8, 2, "S");
   });
-  drawLegendItem(doc, 170, y + 7, "Baseline finish", () => {
+  drawLegendItem(doc, left + 158, y + 7, "Baseline finish", () => {
     doc.setDrawColor(130, 142, 134);
-    doc.line(174, y + 3.4, 174, y + 10.2);
+    doc.line(left + 162, y + 3.4, left + 162, y + 10.2);
   });
 
-  drawLegendItem(doc, 18, y + 15, "Late / delayed", () => {
+  drawLegendItem(doc, left + 6, y + 15, "Late / delayed", () => {
     setFill(doc, colours.red);
-    doc.roundedRect(18, y + 12.7, 8, 2.8, 0.5, 0.5, "F");
+    doc.roundedRect(left + 6, y + 12.7, 8, 2.8, 0.5, 0.5, "F");
   });
-  drawLegendItem(doc, 58, y + 15, "At risk", () => {
+  drawLegendItem(doc, left + 46, y + 15, "At risk", () => {
     setFill(doc, colours.amber);
-    doc.roundedRect(58, y + 12.7, 8, 2.8, 0.5, 0.5, "F");
+    doc.roundedRect(left + 46, y + 12.7, 8, 2.8, 0.5, 0.5, "F");
   });
 
   doc.setFont("helvetica", "normal");
   doc.setFontSize(7.1);
   doc.setTextColor(...colours.muted);
-  doc.text(note, 18, y + 21.4);
+  doc.text(note, left + 6, y + 21.4);
 }
 
 function drawTimeline(doc: JsPDF, items: ProgrammeItem[], schedule: ProgrammeSchedule, y: number, limit: number, timelineStart: Date) {
+  const pageWidth = doc.internal.pageSize.getWidth();
+  const pageHeight = doc.internal.pageSize.getHeight();
   const rows = timelineItems(items, timelineStart, limit);
   if (!rows.length) {
     doc.setFontSize(9);
@@ -263,69 +287,138 @@ function drawTimeline(doc: JsPDF, items: ProgrammeItem[], schedule: ProgrammeSch
     .flatMap((item) => [parseDate(item.finishDate), parseDate(item.baselineFinish)])
     .concat([timelineStart, parseDate(schedule.finishDate)])
     .filter((date): date is Date => Boolean(date));
-  const min = timelineStart;
-  const max = new Date(Math.max(...dates.map((date) => date.getTime())));
+  const min = monthStart(timelineStart);
+  const max = addMonths(monthStart(new Date(Math.max(...dates.map((date) => date.getTime())))), 1);
   const span = Math.max(1, max.getTime() - min.getTime());
-  const labelWidth = 84;
-  const x0 = 12 + labelWidth;
-  const x1 = 285;
+  const laneLabelWidth = pageWidth > 300 ? 28 : 22;
+  const streamKeyWidth = 8;
+  const x0 = 12 + streamKeyWidth + laneLabelWidth;
+  const x1 = pageWidth - 12;
   const trackWidth = x1 - x0;
   const position = (value?: string) => {
     const date = parseDate(value);
     if (!date) return x0;
     return x0 + clamp((date.getTime() - min.getTime()) / span, 0, 1) * trackWidth;
   };
+  const streams = Array.from(
+    rows.reduce((groups, item) => {
+      const stream = item.stream || "Unassigned";
+      groups.set(stream, [...(groups.get(stream) || []), item]);
+      return groups;
+    }, new Map<string, ProgrammeItem[]>())
+  ).sort(([, aItems], [, bItems]) => (parseDate(aItems[0]?.finishDate)?.getTime() ?? 0) - (parseDate(bItems[0]?.finishDate)?.getTime() ?? 0));
+  const headerY = y + 2;
+  const monthBandY = y + 9;
+  const chartTop = y + 18;
+  const chartBottom = pageHeight - 20;
+  const chartHeight = Math.max(55, chartBottom - chartTop);
+  const totalSlots = rows.length + streams.length * 2;
+  const slotHeight = Math.max(4.4, chartHeight / Math.max(totalSlots, 1));
+  const laneGap = Math.max(2, slotHeight * 0.45);
+  const monthCount = Math.max(1, Math.ceil((max.getFullYear() - min.getFullYear()) * 12 + max.getMonth() - min.getMonth()));
 
   doc.setFont("helvetica", "normal");
   doc.setFontSize(7);
   doc.setTextColor(...colours.muted);
   doc.setFont("helvetica", "bold");
-  doc.text(formatDate(min.toISOString()), x0, y);
-  doc.text(formatDate(max.toISOString()), x1, y, { align: "right" });
+  doc.text(formatDate(timelineStart.toISOString()), x0, headerY);
+  doc.text(formatDate(max.toISOString()), x1, headerY, { align: "right" });
   doc.setDrawColor(...colours.line);
-  doc.line(x0, y + 4, x1, y + 4);
+  doc.line(x0, headerY + 4, x1, headerY + 4);
 
-  rows.forEach((item, index) => {
-    const rowY = y + 10 + index * 5.4;
-    const label = item.name.length > 44 ? `${item.name.slice(0, 43)}...` : item.name;
-    const colour = streamColour(item.stream);
-    doc.setFontSize(6.8);
+  for (let index = 0; index < monthCount; index += 1) {
+    const current = addMonths(min, index);
+    const next = addMonths(min, index + 1);
+    const startX = x0 + ((current.getTime() - min.getTime()) / span) * trackWidth;
+    const endX = x0 + ((next.getTime() - min.getTime()) / span) * trackWidth;
+    setFill(doc, [27, 99, 125]);
+    doc.rect(startX, monthBandY, Math.max(2, endX - startX), 8, "F");
+    doc.setDrawColor(9, 49, 62);
+    doc.rect(startX, monthBandY, Math.max(2, endX - startX), 8, "S");
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(pageWidth > 300 ? 8 : 7);
+    doc.setTextColor(255, 255, 255);
+    doc.text(monthLabel(current), startX + Math.max(1.5, (endX - startX) / 2), monthBandY + 5.5, { align: "center" });
+  }
+
+  let cursorY = chartTop;
+  streams.forEach(([stream, streamItems]) => {
+    const colour = streamColour(stream);
+    const laneHeight = Math.max(slotHeight * (streamItems.length + 1), 18);
+    const laneBottom = Math.min(chartBottom, cursorY + laneHeight);
+    const visibleStreamItems = streamItems.slice(0, Math.max(1, Math.floor((laneBottom - cursorY - 5) / slotHeight)));
+
+    setFill(doc, tint(colour));
+    doc.rect(12 + streamKeyWidth, cursorY, pageWidth - 24 - streamKeyWidth, laneBottom - cursorY, "F");
+    doc.setDrawColor(8, 44, 53);
+    doc.rect(12 + streamKeyWidth, cursorY, pageWidth - 24 - streamKeyWidth, laneBottom - cursorY, "S");
     setFill(doc, colour);
-    doc.rect(12, rowY - 2.2, 2.8, 3.8, "F");
+    doc.rect(12, cursorY, streamKeyWidth - 2, laneBottom - cursorY, "F");
+
+    doc.saveGraphicsState();
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(pageWidth > 300 ? 6.3 : 5.4);
     doc.setTextColor(...colours.ink);
-    doc.text(label, 17, rowY + 0.2);
-    doc.setFontSize(5.6);
-    doc.setTextColor(...colours.muted);
-    doc.text(safe(item.stream), 17, rowY + 2.6);
-    doc.setDrawColor(230, 235, 231);
-    doc.line(x0, rowY, x1, rowY);
+    doc.text(stream.toUpperCase(), 12 + streamKeyWidth + 5, cursorY + (laneBottom - cursorY) / 2, { angle: 90, align: "center" });
+    doc.restoreGraphicsState();
 
-    const finish = position(item.finishDate);
-    if (item.baselineFinish) {
-      const baseline = position(item.baselineFinish);
-      doc.setDrawColor(130, 142, 134);
-      doc.line(baseline, rowY - 1.8, baseline, rowY + 2.2);
-    }
-    setFill(doc, colour);
-    doc.triangle(finish, rowY - 2.5, finish + 2.5, rowY, finish, rowY + 2.5, "F");
-    doc.triangle(finish, rowY - 2.5, finish - 2.5, rowY, finish, rowY + 2.5, "F");
-    if (item.delayDays && item.delayDays > 0) {
-      doc.setFont("helvetica", "bold");
-      doc.setFontSize(5.8);
-      doc.setTextColor(...colours.red);
-      doc.text(`+${item.delayDays}d`, Math.min(x1 - 9, finish + 4), rowY + 1.7);
-    }
-    if (item.isCritical) {
-      doc.setDrawColor(...colours.red);
-      doc.circle(finish + 3, rowY, 1.2, "S");
-    }
+    visibleStreamItems.forEach((item, index) => {
+      const rowY = cursorY + 7 + index * slotHeight;
+      if (rowY > laneBottom - 3) return;
+      doc.setDrawColor(205, 196, 192);
+      doc.line(x0, rowY, x1, rowY);
+      const finish = position(item.finishDate);
+      if (item.baselineFinish) {
+        const baseline = position(item.baselineFinish);
+        doc.setDrawColor(130, 142, 134);
+        doc.line(baseline, rowY - 2.4, baseline, rowY + 2.6);
+      }
+      setFill(doc, colour);
+      doc.triangle(finish, rowY - 2.7, finish + 2.7, rowY, finish, rowY + 2.7, "F");
+      doc.triangle(finish, rowY - 2.7, finish - 2.7, rowY, finish, rowY + 2.7, "F");
+      if (item.isCritical) {
+        doc.setDrawColor(...colours.red);
+        doc.circle(finish + 3.4, rowY, 1.4, "S");
+      }
+      if (index < (pageWidth > 300 ? 16 : 8)) {
+        const label = item.name.length > (pageWidth > 300 ? 58 : 36) ? `${item.name.slice(0, pageWidth > 300 ? 57 : 35)}...` : item.name;
+        doc.setFont("helvetica", "normal");
+        doc.setFontSize(pageWidth > 300 ? 5.8 : 5.1);
+        doc.setTextColor(...colours.ink);
+        const labelX = Math.min(x1 - (pageWidth > 300 ? 48 : 34), finish + 5.5);
+        doc.text(label, labelX, rowY + 1.5);
+      }
+      if (item.delayDays && item.delayDays > 0) {
+        doc.setFont("helvetica", "bold");
+        doc.setFontSize(5.4);
+        doc.setTextColor(...colours.red);
+        doc.text(`+${item.delayDays}d`, Math.min(x1 - 9, finish + 4), rowY + 4);
+      }
+    });
+
+    cursorY = laneBottom + laneGap;
   });
 }
 
-export async function exportProgrammePdf({ schedule, items, viewLabel, filters, dateWindowLabel, baselineNumber }: PdfExportOptions) {
+export async function exportProgrammePdf({ schedule, items, viewLabel, filters, dateWindowLabel, baselineNumber, output = "board-pack" }: PdfExportOptions) {
   const [{ default: jsPDF }, { default: autoTable }] = await Promise.all([import("jspdf"), import("jspdf-autotable")]);
-  const doc = new jsPDF({ orientation: "landscape", unit: "mm", format: "a4" });
+  const doc = new jsPDF({ orientation: "landscape", unit: "mm", format: output === "poster" ? "a3" : "a4" });
   addHeader(doc, schedule, viewLabel);
+
+  if (output === "poster") {
+    addSectionTitle(doc, "Simplified Roadmap Timeline", 36);
+    const timelineStart = new Date();
+    const timelineLimit = 64;
+    const timelineCandidateCount = timelineCandidates(items, timelineStart).length;
+    const timelineNote = `Timeline starts from report date (${formatDate(timelineStart.toISOString())}); showing ${Math.min(timelineLimit, timelineCandidateCount)} of ${timelineCandidateCount} forward-looking roadmap milestones.`;
+    drawTimelineLegend(doc, 43, timelineNote);
+    drawTimeline(doc, items, schedule, 77, timelineLimit, timelineStart);
+    doc.setFontSize(7);
+    doc.setTextColor(...colours.muted);
+    doc.text("Page 1 of 1", doc.internal.pageSize.getWidth() - 12, doc.internal.pageSize.getHeight() - 8, { align: "right" });
+    doc.save(`${fileSlug(schedule.title)}-${fileSlug(viewLabel)}-roadmap-poster.pdf`);
+    return;
+  }
 
   addSectionTitle(doc, "Executive Summary", 36);
   table(doc, autoTable, 42, ["Metric", "Value", "Metric", "Value"], summaryRows(schedule, items));

@@ -518,6 +518,23 @@ function App() {
     }
   }
 
+  async function exportPosterPdf() {
+    setError(undefined);
+    try {
+      await exportProgrammePdf({
+        schedule,
+        items: visibleItems,
+        viewLabel: viewLabels[view],
+        filters,
+        dateWindowLabel: dateWindow.label,
+        baselineNumber,
+        output: "poster",
+      });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "The poster PDF could not be generated.");
+    }
+  }
+
   return (
     <main>
       <header className="app-header">
@@ -557,6 +574,7 @@ function App() {
                 </select>
               </label>
               <button type="button" onClick={exportPdf}><Download size={15} /> PDF</button>
+              <button type="button" onClick={exportPosterPdf}><Download size={15} /> Poster PDF</button>
               <button type="button" onClick={exportJson}><Download size={15} /> JSON</button>
             </div>
           </div>
