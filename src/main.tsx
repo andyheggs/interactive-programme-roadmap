@@ -9,10 +9,12 @@ import {
   Filter,
   GitBranch,
   Layers,
+  Moon,
   Milestone,
   Search,
   ShieldCheck,
   SlidersHorizontal,
+  Sun,
   X,
 } from "lucide-react";
 import { exportProgrammePdf } from "./lib/exportProgrammePdf";
@@ -456,6 +458,16 @@ function App() {
   const [error, setError] = useState<string | undefined>();
   const [baselineNumber, setBaselineNumber] = useState(3);
   const [sourceXml, setSourceXml] = useState<{ xml: string; fileName: string } | undefined>();
+  const [theme, setTheme] = useState<"light" | "dark">(() => {
+    const stored = window.localStorage.getItem("roadmap-theme");
+    if (stored === "light" || stored === "dark") return stored;
+    return window.matchMedia?.("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+  });
+
+  useEffect(() => {
+    document.documentElement.dataset.theme = theme;
+    window.localStorage.setItem("roadmap-theme", theme);
+  }, [theme]);
 
   useEffect(() => {
     setFilters((current) => {
@@ -547,11 +559,17 @@ function App() {
           <h1>Interactive Programme Roadmap / Integrated Master Schedule Generator</h1>
           <p>{schedule.title}{schedule.sourceFileName ? ` from ${schedule.sourceFileName}` : ""}</p>
         </div>
-        <label className="upload-button">
-          <FileUp size={18} />
-          Import Project XML
-          <input type="file" accept=".xml,text/xml,application/xml" onChange={(event) => event.target.files?.[0] && importFile(event.target.files[0])} />
-        </label>
+        <div className="header-actions">
+          <button className="theme-button" type="button" onClick={() => setTheme((current) => current === "dark" ? "light" : "dark")}>
+            {theme === "dark" ? <Sun size={18} /> : <Moon size={18} />}
+            {theme === "dark" ? "Light mode" : "Dark mode"}
+          </button>
+          <label className="upload-button">
+            <FileUp size={18} />
+            Import Project XML
+            <input type="file" accept=".xml,text/xml,application/xml" onChange={(event) => event.target.files?.[0] && importFile(event.target.files[0])} />
+          </label>
+        </div>
       </header>
 
       {error ? <div className="error">{error}</div> : null}
