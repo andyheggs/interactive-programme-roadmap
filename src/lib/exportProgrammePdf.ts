@@ -8,6 +8,8 @@ type PdfExportOptions = {
   viewLabel: string;
   filters: ProgrammeFilters;
   dateWindowLabel: string;
+  dateWindowStart?: string;
+  dateWindowEnd?: string;
   baselineNumber: number;
   output?: "board-pack" | "poster";
 };
@@ -89,6 +91,11 @@ function streamOrderIndex(stream: string): number {
   return index === -1 ? preferredStreamOrder.length : index;
 }
 
+function reportTitle(schedule: ProgrammeSchedule): string {
+  const title = schedule.title || "Programme roadmap";
+  return title.toLowerCase().includes("milestone") ? title : `${title} Milestones`;
+}
+
 function addHeader(doc: JsPDF, schedule: ProgrammeSchedule, viewLabel: string) {
   const pageWidth = doc.internal.pageSize.getWidth();
   setFill(doc, colours.deep);
@@ -96,7 +103,7 @@ function addHeader(doc: JsPDF, schedule: ProgrammeSchedule, viewLabel: string) {
   doc.setTextColor(255, 255, 255);
   doc.setFont("helvetica", "bold");
   doc.setFontSize(15);
-  doc.text(schedule.title || "Programme roadmap", 12, 11);
+  doc.text(reportTitle(schedule), 12, 11);
   doc.setFont("helvetica", "normal");
   doc.setFontSize(9);
   doc.text(`${viewLabel} report`, 12, 18);
@@ -220,18 +227,20 @@ function governanceRows(items: ProgrammeItem[]): TableRow[] {
     ]);
 }
 
-function timelineCandidates(items: ProgrammeItem[], timelineStart: Date): ProgrammeItem[] {
+function timelineCandidates(items: ProgrammeItem[], timelineStart: Date, timelineEnd?: Date): ProgrammeItem[] {
   return items
     .filter((item) => item.roadmapMilestone && item.finishDate)
     .filter((item) => {
       const finish = parseDate(item.finishDate);
-      return finish ? finish >= timelineStart : false;
+      if (!finish || finish < timelineStart) return false;
+      if (timelineEnd && finish > timelineEnd) return false;
+      return true;
     })
     .sort((a, b) => streamOrderIndex(a.stream || "Unassigned") - streamOrderIndex(b.stream || "Unassigned") || `${a.stream || "Unassigned"}`.localeCompare(`${b.stream || "Unassigned"}`) || (parseDate(a.finishDate)?.getTime() ?? 0) - (parseDate(b.finishDate)?.getTime() ?? 0));
 }
 
-function timelineItems(items: ProgrammeItem[], timelineStart: Date, limit = 30): ProgrammeItem[] {
-  return timelineCandidates(items, timelineStart)
+function timelineItems(items: ProgrammeItem[], timelineStart: Date, timelineEnd?: Date, limit = 30): ProgrammeItem[] {
+  return timelineCandidates(items, timelineStart, timelineEnd)
     .slice(0, limit);
 }
 
@@ -289,10 +298,10 @@ function drawTimelineLegend(doc: JsPDF, y: number, note: string) {
   doc.text(note, left + 6, y + 17.4);
 }
 
-function drawTimeline(doc: JsPDF, items: ProgrammeItem[], schedule: ProgrammeSchedule, viewLabel: string, title: string, y: number, limit: number, timelineStart: Date) {
+function drawTimeline(doc: JsPDF, items: ProgrammeItem[], schedule: ProgrammeSchedule, viewLabel: string, title: string, y: number, limit: number, timelineStart: Date, timelineEnd?: Date) {
   const pageWidth = doc.internal.pageSize.getWidth();
   const pageHeight = doc.internal.pageSize.getHeight();
-  const rows = timelineItems(items, timelineStart, limit);
+  const rows = timelineItems(items, timelineStart, timelineEnd, limit);
   if (!rows.length) {
     doc.setFontSize(9);
     doc.setTextColor(...colours.muted);
@@ -302,10 +311,10 @@ function drawTimeline(doc: JsPDF, items: ProgrammeItem[], schedule: ProgrammeSch
 
   const dates = rows
     .flatMap((item) => [parseDate(item.finishDate), parseDate(item.baselineFinish)])
-    .concat([timelineStart, parseDate(schedule.finishDate)])
+    .concat([timelineStart, timelineEnd, parseDate(schedule.finishDate)])
     .filter((date): date is Date => Boolean(date));
   const min = monthStart(timelineStart);
-  const max = addMonths(monthStart(new Date(Math.max(...dates.map((date) => date.getTime())))), 1);
+  const max = timelineEnd ? addMonths(monthStart(timelineEnd), 1) : addMonths(monthStart(new Date(Math.max(...dates.map((date) => date.getTime())))), 1);
   const span = Math.max(1, max.getTime() - min.getTime());
   const laneLabelWidth = pageWidth > 300 ? 52 : 44;
   const streamKeyWidth = 7;
@@ -417,8 +426,15 @@ function drawTimeline(doc: JsPDF, items: ProgrammeItem[], schedule: ProgrammeSch
       doc.setFont("helvetica", "normal");
       doc.setFontSize(pageWidth > 300 ? 7 : 5.6);
       doc.setTextColor(...colours.ink);
-      const labelX = Math.min(x1 - (pageWidth > 300 ? 74 : 46), finish + 5.5);
-      doc.text(label, labelX, rowY + 2);
+      const labelGap = pageWidth > 300 ? 6.8 : 5.4;
+      const labelWidth = doc.getTextWidth(label);
+      const canPlaceRight = finish + labelGap + labelWidth <= x1;
+      const canPlaceLeft = finish - labelGap - labelWidth >= x0;
+      if (canPlaceRight || !canPlaceLeft) {
+        doc.text(label, Math.min(x1 - labelWidth, finish + labelGap), rowY + 2);
+      } else {
+        doc.text(label, finish - labelGap, rowY + 2, { align: "right" });
+      }
       if (item.delayDays && item.delayDays > 0) {
         doc.setFont("helvetica", "bold");
         doc.setFontSize(5.4);
@@ -431,19 +447,21 @@ function drawTimeline(doc: JsPDF, items: ProgrammeItem[], schedule: ProgrammeSch
   });
 }
 
-export async function exportProgrammePdf({ schedule, items, viewLabel, filters, dateWindowLabel, baselineNumber, output = "board-pack" }: PdfExportOptions) {
+export async function exportProgrammePdf({ schedule, items, viewLabel, filters, dateWindowLabel, dateWindowStart, dateWindowEnd, baselineNumber, output = "board-pack" }: PdfExportOptions) {
   const [{ default: jsPDF }, { default: autoTable }] = await Promise.all([import("jspdf"), import("jspdf-autotable")]);
   const doc = new jsPDF({ orientation: "landscape", unit: "mm", format: output === "poster" ? "a3" : "a4" });
+  const selectedStart = parseDate(dateWindowStart) ?? parseDate(schedule.startDate) ?? new Date();
+  const selectedEnd = parseDate(dateWindowEnd);
   addHeader(doc, schedule, viewLabel);
 
   if (output === "poster") {
-    addSectionTitle(doc, "Simplified Roadmap Timeline", 36);
-    const timelineStart = new Date();
+    addSectionTitle(doc, "High Level Roadmap Timeline", 36);
+    const timelineStart = selectedStart;
     const timelineLimit = 64;
-    const timelineCandidateCount = timelineCandidates(items, timelineStart).length;
-    const timelineNote = `Timeline starts from report date (${formatDate(timelineStart.toISOString())}); showing ${Math.min(timelineLimit, timelineCandidateCount)} of ${timelineCandidateCount} forward-looking roadmap milestones.`;
+    const timelineCandidateCount = timelineCandidates(items, timelineStart, selectedEnd).length;
+    const timelineNote = `Timeline starts from selected date window (${formatDate(timelineStart.toISOString())}${selectedEnd ? ` to ${formatDate(selectedEnd.toISOString())}` : ""}); showing ${Math.min(timelineLimit, timelineCandidateCount)} of ${timelineCandidateCount} roadmap milestones.`;
     drawTimelineLegend(doc, 43, timelineNote);
-    drawTimeline(doc, items, schedule, viewLabel, "Simplified Roadmap Timeline", 77, timelineLimit, timelineStart);
+    drawTimeline(doc, items, schedule, viewLabel, "High Level Roadmap Timeline", 77, timelineLimit, timelineStart, selectedEnd);
     const pageCount = doc.getNumberOfPages();
     for (let page = 1; page <= pageCount; page += 1) {
       doc.setPage(page);
@@ -462,13 +480,13 @@ export async function exportProgrammePdf({ schedule, items, viewLabel, filters, 
 
   doc.addPage();
   addHeader(doc, schedule, viewLabel);
-  addSectionTitle(doc, "Simplified Roadmap Timeline", 36);
-  const timelineStart = new Date();
+  addSectionTitle(doc, "High Level Roadmap Timeline", 36);
+  const timelineStart = selectedStart;
   const timelineLimit = 20;
-  const timelineCandidateCount = timelineCandidates(items, timelineStart).length;
-  const timelineNote = `Timeline starts from report date (${formatDate(timelineStart.toISOString())}); showing ${Math.min(timelineLimit, timelineCandidateCount)} of ${timelineCandidateCount} forward-looking roadmap milestones.`;
+  const timelineCandidateCount = timelineCandidates(items, timelineStart, selectedEnd).length;
+  const timelineNote = `Timeline starts from selected date window (${formatDate(timelineStart.toISOString())}${selectedEnd ? ` to ${formatDate(selectedEnd.toISOString())}` : ""}); showing ${Math.min(timelineLimit, timelineCandidateCount)} of ${timelineCandidateCount} roadmap milestones.`;
   drawTimelineLegend(doc, 43, timelineNote);
-  drawTimeline(doc, items, schedule, viewLabel, "Simplified Roadmap Timeline", 78, timelineLimit, timelineStart);
+  drawTimeline(doc, items, schedule, viewLabel, "High Level Roadmap Timeline", 78, timelineLimit, timelineStart, selectedEnd);
 
   doc.addPage();
   addHeader(doc, schedule, viewLabel);

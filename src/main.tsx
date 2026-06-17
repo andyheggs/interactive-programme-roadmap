@@ -511,6 +511,8 @@ function App() {
         viewLabel: viewLabels[view],
         filters,
         dateWindowLabel: dateWindow.label,
+        dateWindowStart: dateWindow.start?.toISOString(),
+        dateWindowEnd: dateWindow.end?.toISOString(),
         baselineNumber,
       });
     } catch (err) {
@@ -527,6 +529,8 @@ function App() {
         viewLabel: viewLabels[view],
         filters,
         dateWindowLabel: dateWindow.label,
+        dateWindowStart: dateWindow.start?.toISOString(),
+        dateWindowEnd: dateWindow.end?.toISOString(),
         baselineNumber,
         output: "poster",
       });
