@@ -25,6 +25,7 @@
   --track-grid: #eef2ef;
   --danger-bg: #fff1ef;
   --danger-text: #74170f;
+  --risk: #8a561c;
   --shadow: rgba(23, 32, 27, 0.18);
 }
 
@@ -50,6 +51,7 @@
   --track-grid: #25352f;
   --danger-bg: #331a18;
   --danger-text: #ffb5ad;
+  --risk: #d07b2d;
   --shadow: rgba(0, 0, 0, 0.42);
 }
 
@@ -226,7 +228,7 @@ h1 { max-width: 980px; margin-bottom: 8px; font-size: clamp(1.55rem, 3vw, 2.4rem
 .key.task { background: #5c8fc3; }
 .key.complete { background: #2e7d55; }
 .key.progress { background: #3d78a9; }
-.key.risk { background: #c58b28; }
+.key.risk { background: var(--risk); }
 .key.late { background: #b33a32; }
 .key.critical {
   width: 16px;
@@ -292,7 +294,7 @@ h1 { max-width: 980px; margin-bottom: 8px; font-size: clamp(1.55rem, 3vw, 2.4rem
 .bar.complete { background: #2e7d55; }
 .bar.in-progress { background: #3d78a9; }
 .bar.late { background: #b33a32; }
-.bar.at-risk { background: #c58b28; }
+.bar.at-risk { background: var(--risk); }
 .bar.critical { outline: 2px solid #7d1712; outline-offset: 1px; }
 
 .milestone {
@@ -324,7 +326,7 @@ h1 { max-width: 980px; margin-bottom: 8px; font-size: clamp(1.55rem, 3vw, 2.4rem
 .status-pill.complete { background: #2e7d55; }
 .status-pill.in-progress { background: #3d78a9; }
 .status-pill.late { background: #b33a32; }
-.status-pill.at-risk { background: #c58b28; }
+.status-pill.at-risk { background: var(--risk); }
 
 .insights {
   display: grid;

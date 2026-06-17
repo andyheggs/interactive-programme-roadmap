@@ -43,7 +43,7 @@ const streamPalette: Rgb[] = [
   [128, 83, 120],
 ];
 
-const atRiskColour: Rgb = [92, 104, 122];
+const atRiskColour: Rgb = [138, 86, 28];
 
 const preferredStreamOrder = [
   "legislation",
@@ -291,6 +291,12 @@ function drawTimelineLegend(doc: JsPDF, y: number, note: string) {
     setFill(doc, atRiskColour);
     doc.roundedRect(left + 108, y + 4.7, 8, 2.8, 0.5, 0.5, "F");
   });
+  drawLegendItem(doc, left + 146, y + 7, "Baseline", () => {
+    doc.setDrawColor(130, 142, 134);
+    doc.setLineDashPattern([1.2, 1.2], 0);
+    doc.line(left + 150, y + 3.6, left + 150, y + 10);
+    doc.setLineDashPattern([], 0);
+  });
 
   doc.setFont("helvetica", "normal");
   doc.setFontSize(7.1);
@@ -373,7 +379,7 @@ function drawTimeline(doc: JsPDF, items: ProgrammeItem[], schedule: ProgrammeSch
     }
   };
 
-  const rowHeight = pageWidth > 300 ? 8.2 : 6.6;
+  const rowHeight = pageWidth > 300 ? 10.2 : 8.2;
   const laneHeightFor = (streamItems: ProgrammeItem[]) => Math.min(maxLaneHeight, Math.max(28, 14 + streamItems.length * rowHeight));
   const startNewTimelinePage = (continued: boolean) => {
     doc.addPage();
@@ -422,18 +428,24 @@ function drawTimeline(doc: JsPDF, items: ProgrammeItem[], schedule: ProgrammeSch
       setFill(doc, colours.amber);
       doc.triangle(finish, rowY - 2.7, finish + 2.7, rowY, finish, rowY + 2.7, "F");
       doc.triangle(finish, rowY - 2.7, finish - 2.7, rowY, finish, rowY + 2.7, "F");
-      const label = item.name.length > (pageWidth > 300 ? 72 : 46) ? `${item.name.slice(0, pageWidth > 300 ? 71 : 45)}...` : item.name;
+      const rawLabel = `${formatDate(item.finishDate)} - ${item.name}`;
       doc.setFont("helvetica", "normal");
-      doc.setFontSize(pageWidth > 300 ? 7 : 5.6);
+      doc.setFontSize(pageWidth > 300 ? 6.8 : 5.5);
       doc.setTextColor(...colours.ink);
       const labelGap = pageWidth > 300 ? 6.8 : 5.4;
-      const labelWidth = doc.getTextWidth(label);
-      const canPlaceRight = finish + labelGap + labelWidth <= x1;
-      const canPlaceLeft = finish - labelGap - labelWidth >= x0;
-      if (canPlaceRight || !canPlaceLeft) {
-        doc.text(label, Math.min(x1 - labelWidth, finish + labelGap), rowY + 2);
+      const rightWidth = Math.max(24, x1 - finish - labelGap);
+      const leftWidth = Math.max(24, finish - labelGap - x0);
+      const preferRight = rightWidth >= Math.min(leftWidth, pageWidth > 300 ? 85 : 48);
+      const maxLabelWidth = Math.min(pageWidth > 300 ? 86 : 48, preferRight ? rightWidth : leftWidth);
+      const labelLines = doc.splitTextToSize(rawLabel, maxLabelWidth).slice(0, 2);
+      if (labelLines.length > 1) {
+        const last = labelLines[1];
+        if (doc.getTextWidth(last) >= maxLabelWidth - 2 && !last.endsWith("...")) labelLines[1] = `${last.slice(0, Math.max(0, last.length - 4))}...`;
+      }
+      if (preferRight) {
+        doc.text(labelLines, finish + labelGap, rowY - (labelLines.length > 1 ? 1.2 : 0) + 2);
       } else {
-        doc.text(label, finish - labelGap, rowY + 2, { align: "right" });
+        doc.text(labelLines, finish - labelGap, rowY - (labelLines.length > 1 ? 1.2 : 0) + 2, { align: "right" });
       }
       if (item.delayDays && item.delayDays > 0) {
         doc.setFont("helvetica", "bold");
