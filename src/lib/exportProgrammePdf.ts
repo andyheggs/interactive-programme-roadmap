@@ -43,7 +43,7 @@ const streamPalette: Rgb[] = [
   [128, 83, 120],
 ];
 
-const atRiskColour: Rgb = [138, 86, 28];
+const atRiskColour: Rgb = [232, 117, 26];
 
 const preferredStreamOrder = [
   "legislation",
@@ -428,8 +428,6 @@ function drawTimeline(doc: JsPDF, items: ProgrammeItem[], schedule: ProgrammeSch
       setFill(doc, colours.amber);
       doc.triangle(finish, rowY - 2.7, finish + 2.7, rowY, finish, rowY + 2.7, "F");
       doc.triangle(finish, rowY - 2.7, finish - 2.7, rowY, finish, rowY + 2.7, "F");
-      const rawLabel = `${formatDate(item.finishDate)} - ${item.name}`;
-      doc.setFont("helvetica", "normal");
       doc.setFontSize(pageWidth > 300 ? 6.8 : 5.5);
       doc.setTextColor(...colours.ink);
       const labelGap = pageWidth > 300 ? 6.8 : 5.4;
@@ -437,15 +435,39 @@ function drawTimeline(doc: JsPDF, items: ProgrammeItem[], schedule: ProgrammeSch
       const leftWidth = Math.max(24, finish - labelGap - x0);
       const preferRight = rightWidth >= Math.min(leftWidth, pageWidth > 300 ? 85 : 48);
       const maxLabelWidth = Math.min(pageWidth > 300 ? 86 : 48, preferRight ? rightWidth : leftWidth);
-      const labelLines = doc.splitTextToSize(rawLabel, maxLabelWidth).slice(0, 2);
+      const dateLabel = `${formatDate(item.finishDate)} -`;
+      doc.setFont("helvetica", "bold");
+      const dateWidth = doc.getTextWidth(`${dateLabel} `);
+      doc.setFont("helvetica", "normal");
+      const descriptionLines = doc.splitTextToSize(item.name, Math.max(18, maxLabelWidth - dateWidth));
+      const firstDescription = descriptionLines[0] || "";
+      const secondDescription = descriptionLines.slice(1).join(" ");
+      const labelLines = [
+        { date: dateLabel, text: firstDescription },
+        ...(secondDescription ? [{ date: "", text: secondDescription }] : []),
+      ].slice(0, 2);
       if (labelLines.length > 1) {
-        const last = labelLines[1];
-        if (doc.getTextWidth(last) >= maxLabelWidth - 2 && !last.endsWith("...")) labelLines[1] = `${last.slice(0, Math.max(0, last.length - 4))}...`;
+        const last = labelLines[1].text;
+        if (doc.getTextWidth(last) >= maxLabelWidth - 2 && !last.endsWith("...")) labelLines[1].text = `${last.slice(0, Math.max(0, last.length - 4))}...`;
       }
+      const labelY = rowY - (labelLines.length > 1 ? 1.2 : 0) + 2;
+      const lineHeight = pageWidth > 300 ? 3.6 : 3;
       if (preferRight) {
-        doc.text(labelLines, finish + labelGap, rowY - (labelLines.length > 1 ? 1.2 : 0) + 2);
+        const labelX = finish + labelGap;
+        doc.setFont("helvetica", "bold");
+        doc.text(labelLines[0].date, labelX, labelY);
+        doc.setFont("helvetica", "normal");
+        doc.text(labelLines[0].text, labelX + dateWidth, labelY);
+        if (labelLines[1]) doc.text(labelLines[1].text, labelX, labelY + lineHeight);
       } else {
-        doc.text(labelLines, finish - labelGap, rowY - (labelLines.length > 1 ? 1.2 : 0) + 2, { align: "right" });
+        const labelX = finish - labelGap;
+        const firstTextWidth = doc.getTextWidth(labelLines[0].text);
+        const lineStart = labelX - dateWidth - firstTextWidth;
+        doc.setFont("helvetica", "bold");
+        doc.text(labelLines[0].date, lineStart, labelY);
+        doc.setFont("helvetica", "normal");
+        doc.text(labelLines[0].text, lineStart + dateWidth, labelY);
+        if (labelLines[1]) doc.text(labelLines[1].text, labelX, labelY + lineHeight, { align: "right" });
       }
       if (item.delayDays && item.delayDays > 0) {
         doc.setFont("helvetica", "bold");
