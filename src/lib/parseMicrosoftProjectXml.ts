@@ -16,7 +16,16 @@ const FALLBACK_CUSTOM_FIELDS: Record<string, keyof ProgrammeItem> = {
   "188743743": "version",
   "188743746": "visibility",
   "188743747": "roadmapView",
+  "188743748": "milestoneLevel",
+  "188743749": "dependencyLevel",
+  "188743750": "criticalPathReview",
   "188743752": "discussed",
+  "188743753": "executiveMilestone",
+  "188743754": "boardReportable",
+  "188743755": "decisionRequired",
+  "188743756": "externalDependency",
+  "188743759": "governanceGate",
+  "188743999": "ragStatus",
 };
 
 function childText(node: Element, tag: string): string | undefined {
@@ -65,7 +74,16 @@ function customFieldForDefinition(fieldName?: string, alias?: string): keyof Pro
   if (labels.some((label) => label === "version" || label === "text5")) return "version";
   if (labels.some((label) => label === "visibility" || label === "text6")) return "visibility";
   if (labels.some((label) => label === "roadmap view" || label === "text7")) return "roadmapView";
+  if (labels.some((label) => label === "milestone level" || label === "text8")) return "milestoneLevel";
+  if (labels.some((label) => label === "dependency level" || label === "text9")) return "dependencyLevel";
+  if (labels.some((label) => label === "critical path review" || label === "text10")) return "criticalPathReview";
+  if (labels.some((label) => label === "rag status" || label === "text13")) return "ragStatus";
   if (labels.some((label) => label === "discussed" || label === "flag1")) return "discussed";
+  if (labels.some((label) => label === "executive milestones" || label === "flag2")) return "executiveMilestone";
+  if (labels.some((label) => label === "board reportable" || label === "flag3")) return "boardReportable";
+  if (labels.some((label) => label === "decision required" || label === "flag4")) return "decisionRequired";
+  if (labels.some((label) => label === "external dependency" || label === "flag5")) return "externalDependency";
+  if (labels.some((label) => label === "governance gate" || label === "flag8")) return "governanceGate";
   return undefined;
 }
 
@@ -167,7 +185,14 @@ function applyCustomFields(
     if (!fieldName) return;
     const raw = resolveLookupValue(childText(attribute, "Value"), childText(attribute, "ValueGUID"), lookup);
     if (fieldName === "roadmapMilestone") item.roadmapMilestone = raw?.toLowerCase() === "yes" || asBool(raw);
-    else if (fieldName === "discussed") item.discussed = asBool(raw);
+    else if (
+      fieldName === "discussed" ||
+      fieldName === "executiveMilestone" ||
+      fieldName === "boardReportable" ||
+      fieldName === "decisionRequired" ||
+      fieldName === "externalDependency" ||
+      fieldName === "governanceGate"
+    ) item[fieldName] = asBool(raw);
     else if (raw && raw !== "None" && raw !== "N/A") (item[fieldName] as string | boolean | undefined) = raw;
   });
   return item;

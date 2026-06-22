@@ -69,7 +69,16 @@ export type ProgrammeItem = {
   version?: string;
   visibility?: "Public" | "Internal" | "Restricted" | string;
   roadmapView?: "Governance" | "Delivery" | "Programme" | string;
+  milestoneLevel?: string;
+  dependencyLevel?: string;
+  criticalPathReview?: string;
+  ragStatus?: string;
   discussed?: boolean;
+  executiveMilestone?: boolean;
+  boardReportable?: boolean;
+  decisionRequired?: boolean;
+  externalDependency?: boolean;
+  governanceGate?: boolean;
   delayDays?: number;
   delayWorkingDays?: number;
   status: ProgrammeStatus;

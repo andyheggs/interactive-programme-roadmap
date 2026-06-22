@@ -3,24 +3,30 @@ import { createRoot } from "react-dom/client";
 import {
   CalendarDays,
   ChevronRight,
+  ClipboardCheck,
   Diamond,
   Download,
   FileUp,
+  FileSpreadsheet,
   Filter,
   GitBranch,
   Layers,
+  LayoutDashboard,
   Moon,
   Milestone,
   Search,
   ShieldCheck,
   SlidersHorizontal,
   Sun,
+  Users,
   X,
 } from "lucide-react";
 import { exportProgrammePdf } from "./lib/exportProgrammePdf";
 import { parseMicrosoftProjectXml } from "./lib/parseMicrosoftProjectXml";
+import { parseMeetingTracker } from "./lib/parseMeetingTracker";
 import { clamp, formatDate, parseDate, uniqueSorted } from "./lib/dateUtils";
 import type { ProgrammeFilters, ProgrammeItem, ProgrammeSchedule, ProgrammeView } from "./types/programme";
+import type { TrackerAction, TrackerData, TrackerDecision, TrackerIssue, TrackerRisk } from "./types/reporting";
 import "./styles.css";
 
 const initialFilters: ProgrammeFilters = {
@@ -49,6 +55,39 @@ const viewLabels: Record<ProgrammeView, string> = {
   delivery: "Delivery",
   release: "Version / Release",
 };
+
+type AppPage =
+  | "workspace"
+  | "home"
+  | "ceo"
+  | "board"
+  | "reporting-roadmap"
+  | "risks"
+  | "actions"
+  | "release-roadmap"
+  | "version-scope"
+  | "release-readiness"
+  | "dependencies"
+  | "workstreams"
+  | "partner"
+  | "downloads";
+
+const appPages: Array<{ key: AppPage; label: string; group: "core" | "reporting" | "future" }> = [
+  { key: "workspace", label: "Roadmap Workspace", group: "core" },
+  { key: "home", label: "Home Dashboard", group: "reporting" },
+  { key: "ceo", label: "CEO View", group: "reporting" },
+  { key: "board", label: "Board Report", group: "reporting" },
+  { key: "reporting-roadmap", label: "Reporting Roadmap", group: "reporting" },
+  { key: "risks", label: "Risks & Issues", group: "reporting" },
+  { key: "actions", label: "Actions & Decisions", group: "reporting" },
+  { key: "dependencies", label: "Dependencies", group: "reporting" },
+  { key: "workstreams", label: "Workstreams", group: "reporting" },
+  { key: "partner", label: "Partner View", group: "reporting" },
+  { key: "downloads", label: "Downloads", group: "reporting" },
+  { key: "release-roadmap", label: "Release Roadmap", group: "future" },
+  { key: "version-scope", label: "Version Scope", group: "future" },
+  { key: "release-readiness", label: "Release Readiness", group: "future" },
+];
 
 function makeSampleSchedule(): ProgrammeSchedule {
   const items: ProgrammeItem[] = [
@@ -412,6 +451,440 @@ function InsightsPanel({ schedule }: { schedule: ProgrammeSchedule }) {
   );
 }
 
+function isOpenStatus(status?: string): boolean {
+  const value = status?.toLowerCase() ?? "";
+  return !["complete", "completed", "closed", "done"].includes(value);
+}
+
+function isRedOrAmber(value?: string): boolean {
+  const label = value?.toLowerCase() ?? "";
+  return label.includes("red") || label.includes("amber") || label.includes("high");
+}
+
+function dateWithin(value: string | undefined, window: DateWindow): boolean {
+  if (!window.start && !window.end) return true;
+  const date = parseDate(value);
+  if (!date) return false;
+  if (window.start && date < window.start) return false;
+  if (window.end && date > window.end) return false;
+  return true;
+}
+
+function bySoonest(a?: string, b?: string): number {
+  return (parseDate(a)?.getTime() ?? Number.MAX_SAFE_INTEGER) - (parseDate(b)?.getTime() ?? Number.MAX_SAFE_INTEGER);
+}
+
+function itemImportance(item: ProgrammeItem): number {
+  const level = item.milestoneLevel?.toLowerCase() ?? "";
+  if (item.executiveMilestone || level.includes("executive")) return 5;
+  if (item.boardReportable || level.includes("board")) return 4;
+  if (item.roadmapMilestone) return 3;
+  if (item.governanceGate || item.decisionRequired) return 2;
+  return 1;
+}
+
+function latestWeeklySummary(tracker?: TrackerData) {
+  return tracker?.weeklySummaries
+    .slice()
+    .sort((a, b) => (parseDate(b.weekEnding)?.getTime() ?? 0) - (parseDate(a.weekEnding)?.getTime() ?? 0))[0];
+}
+
+function programmeMilestones(schedule: ProgrammeSchedule): ProgrammeItem[] {
+  return schedule.items
+    .filter((item) => item.isMilestone || item.roadmapMilestone)
+    .sort((a, b) => itemImportance(b) - itemImportance(a) || bySoonest(a.finishDate, b.finishDate));
+}
+
+function periodMilestones(schedule: ProgrammeSchedule, window: DateWindow): ProgrammeItem[] {
+  return programmeMilestones(schedule)
+    .filter((item) => dateWithin(item.finishDate, window) && item.status !== "complete")
+    .sort((a, b) => bySoonest(a.finishDate, b.finishDate));
+}
+
+function lateMilestones(schedule: ProgrammeSchedule): ProgrammeItem[] {
+  return programmeMilestones(schedule)
+    .filter((item) => item.status === "late" || Boolean(item.delayDays && item.delayDays > 0))
+    .sort((a, b) => (b.delayDays ?? 0) - (a.delayDays ?? 0));
+}
+
+function openRisks(tracker?: TrackerData): TrackerRisk[] {
+  return tracker?.risks.filter((risk) => isOpenStatus(risk.status)) ?? [];
+}
+
+function openIssues(tracker?: TrackerData): TrackerIssue[] {
+  return tracker?.issues.filter((issue) => isOpenStatus(issue.status)) ?? [];
+}
+
+function openActions(tracker?: TrackerData): TrackerAction[] {
+  return tracker?.actions.filter((action) => isOpenStatus(action.status)) ?? [];
+}
+
+function openDecisions(tracker?: TrackerData): TrackerDecision[] {
+  return tracker?.decisions.filter((decision) => isOpenStatus(decision.status)) ?? [];
+}
+
+function ReportingPeriodControl({
+  filters,
+  setFilters,
+}: {
+  filters: ProgrammeFilters;
+  setFilters: React.Dispatch<React.SetStateAction<ProgrammeFilters>>;
+}) {
+  const update = <K extends keyof ProgrammeFilters>(key: K, value: ProgrammeFilters[K]) =>
+    setFilters((current) => ({ ...current, [key]: value }));
+  return (
+    <div className="report-period">
+      <label className="field">
+        <span>Reporting date window</span>
+        <select value={filters.datePreset} onChange={(event) => update("datePreset", event.target.value as ProgrammeFilters["datePreset"])}>
+          <option value="all">Full programme</option>
+          <option value="status-forward">Status date forward</option>
+          <option value="current-forward">Current date forward</option>
+          <option value="next-30">Next 30 days</option>
+          <option value="next-60">Next 60 days</option>
+          <option value="next-90">Next 90 days</option>
+          <option value="custom">Custom</option>
+        </select>
+      </label>
+      {filters.datePreset === "custom" ? (
+        <>
+          <label className="field">
+            <span>From</span>
+            <input type="date" value={filters.dateStart} onChange={(event) => update("dateStart", event.target.value)} />
+          </label>
+          <label className="field">
+            <span>To</span>
+            <input type="date" value={filters.dateEnd} onChange={(event) => update("dateEnd", event.target.value)} />
+          </label>
+        </>
+      ) : null}
+    </div>
+  );
+}
+
+function PageIntro({
+  title,
+  children,
+  tracker,
+}: {
+  title: string;
+  children: React.ReactNode;
+  tracker?: TrackerData;
+}) {
+  return (
+    <div className="page-intro">
+      <div>
+        <h2>{title}</h2>
+        <p>{children}</p>
+      </div>
+      <span className={tracker ? "source-pill loaded" : "source-pill"}>
+        {tracker ? `Tracker: ${tracker.sourceFileName}` : "Tracker not imported"}
+      </span>
+    </div>
+  );
+}
+
+function StatGrid({ cards }: { cards: Array<[string, string, string?]> }) {
+  return (
+    <section className="report-stat-grid">
+      {cards.map(([label, value, tone]) => (
+        <div className={`report-stat ${tone ?? ""}`} key={label}>
+          <span>{label}</span>
+          <strong>{value}</strong>
+        </div>
+      ))}
+    </section>
+  );
+}
+
+function ItemList({
+  title,
+  items,
+  empty = "No items found.",
+}: {
+  title: string;
+  items: Array<{ id: string; title: string; meta?: string; status?: string }>;
+  empty?: string;
+}) {
+  return (
+    <section className="report-card">
+      <h3>{title}</h3>
+      {items.length ? (
+        <div className="report-list">
+          {items.slice(0, 8).map((item) => (
+            <article key={item.id}>
+              <div>
+                <strong>{item.title}</strong>
+                {item.meta ? <span>{item.meta}</span> : null}
+              </div>
+              {item.status ? <span className={`status-pill ${item.status.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`}>{item.status}</span> : null}
+            </article>
+          ))}
+        </div>
+      ) : (
+        <p className="empty-state">{empty}</p>
+      )}
+    </section>
+  );
+}
+
+function HomeDashboard({ schedule, tracker, dateWindow }: { schedule: ProgrammeSchedule; tracker?: TrackerData; dateWindow: DateWindow }) {
+  const weekly = latestWeeklySummary(tracker);
+  const milestones = programmeMilestones(schedule).slice(0, 5);
+  const upcoming = periodMilestones(schedule, dateWindow).slice(0, 5);
+  const risks = openRisks(tracker).filter((risk) => risk.dashboardFlag || isRedOrAmber(risk.rag)).slice(0, 5);
+  const decisions = [
+    ...schedule.items.filter((item) => item.decisionRequired || item.governanceGate).map((item) => ({
+      id: `plan-${item.uid}`,
+      title: item.name,
+      meta: `${formatDate(item.finishDate)}${item.approvalBody ? ` · ${item.approvalBody}` : ""}`,
+      status: item.status,
+    })),
+    ...openDecisions(tracker).map((decision) => ({
+      id: `decision-${decision.id}`,
+      title: decision.title,
+      meta: `${formatDate(decision.decisionRequiredBy)}${decision.decisionMaker ? ` · ${decision.decisionMaker}` : ""}`,
+      status: decision.status,
+    })),
+  ].slice(0, 8);
+
+  return (
+    <>
+      <PageIntro title="Home Dashboard" tracker={tracker}>A single-page programme position combining the imported project plan and the meeting tracker.</PageIntro>
+      <StatGrid cards={[
+        ["Overall RAG", weekly?.overallRag ?? "Not set", isRedOrAmber(weekly?.overallRag) ? "warn" : ""],
+        ["Go live date", formatDate(schedule.finishDate)],
+        ["Top risk", risks[0]?.title ?? "None flagged"],
+        ["Next milestone", upcoming[0]?.name ?? "None in window"],
+      ]} />
+      <div className="report-grid two">
+        <ItemList title="Top 5 Milestones" items={milestones.map((item) => ({ id: item.uid, title: item.name, meta: `${formatDate(item.finishDate)} · ${item.stream ?? "No stream"}`, status: item.status }))} />
+        <ItemList title="Next Window" items={upcoming.map((item) => ({ id: item.uid, title: item.name, meta: `${formatDate(item.finishDate)} · ${item.stream ?? "No stream"}`, status: item.status }))} />
+        <ItemList title="Risks Needing Attention" items={risks.map((risk) => ({ id: risk.id, title: risk.title, meta: `${risk.stream ?? "No stream"} · ${risk.owner ?? "No owner"}`, status: risk.rag ?? risk.status }))} />
+        <ItemList title="Decisions and Actions Due Soon" items={decisions} />
+      </div>
+    </>
+  );
+}
+
+function CEOView({ schedule, tracker }: { schedule: ProgrammeSchedule; tracker?: TrackerData }) {
+  const milestones = programmeMilestones(schedule).filter((item) => item.executiveMilestone || itemImportance(item) >= 4).slice(0, 5);
+  const decisions = openDecisions(tracker).filter((decision) => decision.dashboardFlag || /ceo|senior|sro|director/i.test(`${decision.decisionMaker} ${decision.owner}`));
+  const risks = openRisks(tracker).filter((risk) => risk.dashboardFlag || isRedOrAmber(risk.rag)).slice(0, 5);
+  return (
+    <>
+      <PageIntro title="CEO View" tracker={tracker}>The two-minute view: decisions, blockers and the few milestones that genuinely need senior attention.</PageIntro>
+      <StatGrid cards={[
+        ["Status", latestWeeklySummary(tracker)?.overallRag ?? "Not set"],
+        ["Decision needed", decisions[0]?.title ?? "None flagged"],
+        ["Main blocker", risks[0]?.title ?? "None flagged"],
+        ["Next milestone", milestones[0]?.name ?? "None flagged"],
+      ]} />
+      <div className="report-grid two">
+        <ItemList title="Top 5 Milestones Timeline" items={milestones.map((item) => ({ id: item.uid, title: item.name, meta: `${formatDate(item.finishDate)} · ${item.stream ?? "No stream"}`, status: item.status }))} />
+        <ItemList title="CEO Decisions" items={decisions.map((decision) => ({ id: decision.id, title: decision.title, meta: `${formatDate(decision.decisionRequiredBy)} · ${decision.decisionMaker ?? decision.owner ?? "No owner"}`, status: decision.status }))} />
+        <ItemList title="Risks Requiring CEO Attention" items={risks.map((risk) => ({ id: risk.id, title: risk.title, meta: `${risk.stream ?? "No stream"} · ${risk.latestUpdate ?? risk.mitigation ?? ""}`, status: risk.rag ?? risk.status }))} />
+        <ItemList title="CEO Actions" items={openActions(tracker).filter((action) => /ceo|senior|sro|director/i.test(`${action.owner} ${action.latestUpdate}`)).map((action) => ({ id: action.id, title: action.title, meta: `${formatDate(action.dueDate)} · ${action.owner ?? "No owner"}`, status: action.status }))} />
+      </div>
+    </>
+  );
+}
+
+function BoardReportView({ schedule, tracker, dateWindow }: { schedule: ProgrammeSchedule; tracker?: TrackerData; dateWindow: DateWindow }) {
+  const weekly = latestWeeklySummary(tracker);
+  const weeklyByDate = tracker?.weeklySummaries
+    .slice()
+    .sort((a, b) => (parseDate(b.weekEnding)?.getTime() ?? 0) - (parseDate(a.weekEnding)?.getTime() ?? 0));
+  const boardMilestones = programmeMilestones(schedule).filter((item) => item.boardReportable || /board/i.test(item.milestoneLevel ?? "")).slice(0, 8);
+  const nextPeriod = periodMilestones(schedule, dateWindow).slice(0, 8);
+  return (
+    <>
+      <PageIntro title="Board Report View" tracker={tracker}>Formal reporting content for board packs, escalation and the next reporting period.</PageIntro>
+      <StatGrid cards={[
+        ["Current RAG", weekly?.overallRag ?? "Not set"],
+        ["Previous RAG", weeklyByDate?.[1]?.overallRag ?? "Not set"],
+        ["Movement", weekly?.whatChanged ? "Updated" : "Not set"],
+        ["Decision required", openDecisions(tracker).length.toString()],
+      ]} />
+      <div className="report-grid two">
+        <ItemList title="Board Reportable Milestones" items={boardMilestones.map((item) => ({ id: item.uid, title: item.name, meta: `${formatDate(item.finishDate)} · ${item.stream ?? "No stream"}`, status: item.status }))} />
+        <ItemList title="Risks for Escalation" items={openRisks(tracker).filter((risk) => risk.dashboardFlag || isRedOrAmber(risk.rag)).map((risk) => ({ id: risk.id, title: risk.title, meta: risk.latestUpdate ?? risk.mitigation, status: risk.rag ?? risk.status }))} />
+        <ItemList title="Decisions Required" items={openDecisions(tracker).map((decision) => ({ id: decision.id, title: decision.title, meta: `${formatDate(decision.decisionRequiredBy)} · ${decision.decisionMaker ?? "No decision maker"}`, status: decision.status }))} />
+        <ItemList title="Next Reporting Period" items={nextPeriod.map((item) => ({ id: item.uid, title: item.name, meta: `${formatDate(item.finishDate)} · ${item.approvalBody ?? item.stream ?? "No stream"}`, status: item.status }))} />
+      </div>
+    </>
+  );
+}
+
+function ReportingRoadmapView({ schedule, dateWindow, selected, onSelect }: { schedule: ProgrammeSchedule; dateWindow: DateWindow; selected?: ProgrammeItem; onSelect: (item: ProgrammeItem) => void }) {
+  const items = programmeMilestones(schedule).filter((item) => item.roadmapMilestone || itemImportance(item) >= 3);
+  return (
+    <>
+      <PageIntro title="Reporting Roadmap">An audience-friendly roadmap drawn from roadmap, executive and board-level milestones.</PageIntro>
+      <Timeline schedule={schedule} items={items} selected={selected} onSelect={onSelect} dateWindow={dateWindow} />
+    </>
+  );
+}
+
+function RisksIssuesView({ tracker }: { tracker?: TrackerData }) {
+  const risks = openRisks(tracker);
+  const issues = openIssues(tracker);
+  return (
+    <>
+      <PageIntro title="Risks and Issues" tracker={tracker}>Threats, current problems, escalations and the latest tracker updates.</PageIntro>
+      <StatGrid cards={[
+        ["Open risks", risks.length.toString()],
+        ["Red / amber risks", risks.filter((risk) => isRedOrAmber(risk.rag)).length.toString(), "warn"],
+        ["Open issues", issues.length.toString()],
+        ["Escalated items", [...risks, ...issues].filter((item) => item.dashboardFlag).length.toString()],
+      ]} />
+      <div className="report-grid two">
+        <ItemList title="Top Risks" items={risks.filter((risk) => risk.dashboardFlag || isRedOrAmber(risk.rag)).map((risk) => ({ id: risk.id, title: risk.title, meta: `${risk.stream ?? "No stream"} · ${risk.mitigation ?? risk.latestUpdate ?? ""}`, status: risk.rag ?? risk.status }))} />
+        <ItemList title="Open Issues" items={issues.map((issue) => ({ id: issue.id, title: issue.title, meta: `${issue.stream ?? "No stream"} · ${issue.requiredAction ?? issue.latestUpdate ?? ""}`, status: issue.rag ?? issue.status }))} />
+      </div>
+    </>
+  );
+}
+
+function ActionsDecisionsView({ schedule, tracker, dateWindow }: { schedule: ProgrammeSchedule; tracker?: TrackerData; dateWindow: DateWindow }) {
+  const actions = openActions(tracker).filter((action) => dateWithin(action.dueDate, dateWindow));
+  const decisions = openDecisions(tracker).filter((decision) => dateWithin(decision.decisionRequiredBy ?? decision.decisionDate, dateWindow));
+  const approvalGates = schedule.items.filter((item) => item.approvalBody || item.governanceGate || item.decisionRequired);
+  return (
+    <>
+      <PageIntro title="Actions and Decisions" tracker={tracker}>Who needs to do what, by when, and which formal approvals are coming from the plan.</PageIntro>
+      <div className="report-grid two">
+        <ItemList title="Actions Due in Window" items={actions.sort((a, b) => bySoonest(a.dueDate, b.dueDate)).map((action) => ({ id: action.id, title: action.title, meta: `${formatDate(action.dueDate)} · ${action.owner ?? "No owner"}`, status: action.status }))} />
+        <ItemList title="Decisions Needed" items={decisions.sort((a, b) => bySoonest(a.decisionRequiredBy, b.decisionRequiredBy)).map((decision) => ({ id: decision.id, title: decision.title, meta: `${formatDate(decision.decisionRequiredBy)} · ${decision.decisionMaker ?? decision.owner ?? "No owner"}`, status: decision.status }))} />
+        <ItemList title="Approval Gates from Plan" items={approvalGates.slice(0, 8).map((item) => ({ id: item.uid, title: item.name, meta: `${formatDate(item.finishDate)} · ${item.approvalBody ?? "Governance gate"}`, status: item.status }))} />
+        <ItemList title="This Week's Priority Actions" items={openActions(tracker).filter((action) => action.dashboardFlag).map((action) => ({ id: action.id, title: action.title, meta: `${formatDate(action.dueDate)} · ${action.owner ?? "No owner"}`, status: action.status }))} />
+      </div>
+    </>
+  );
+}
+
+function DependencyView({ schedule, tracker }: { schedule: ProgrammeSchedule; tracker?: TrackerData }) {
+  const dependencies = schedule.items.filter((item) => item.dependencyLevel || item.externalDependency || item.predecessors.length || item.successors.length);
+  const blockers = [...openRisks(tracker), ...openIssues(tracker)].filter((item) => item.dashboardFlag || isRedOrAmber("rag" in item ? item.rag : undefined));
+  return (
+    <>
+      <PageIntro title="Dependency View" tracker={tracker}>A first dependency readout using Project predecessor/successor links and tracker blockers.</PageIntro>
+      <div className="report-grid two">
+        <ItemList title="Executive and Programme Dependencies" items={dependencies.slice(0, 10).map((item) => ({ id: item.uid, title: item.name, meta: `${item.dependencyLevel ?? "Linked dependency"} · ${item.stream ?? "No stream"}`, status: item.status }))} />
+        <ItemList title="Blocking Items from Tracker" items={blockers.map((item) => ({ id: item.id, title: item.title, meta: item.latestUpdate, status: "rag" in item ? item.rag ?? item.status : item.status }))} />
+      </div>
+    </>
+  );
+}
+
+function WorkstreamViews({ schedule, tracker }: { schedule: ProgrammeSchedule; tracker?: TrackerData }) {
+  const streams = uniqueSorted([
+    ...schedule.items.map((item) => item.stream),
+    ...(tracker?.risks.map((risk) => risk.stream) ?? []),
+    ...(tracker?.issues.map((issue) => issue.stream) ?? []),
+    ...(tracker?.actions.map((action) => action.stream) ?? []),
+  ]);
+  return (
+    <>
+      <PageIntro title="Workstream Views" tracker={tracker}>A stream-by-stream reporting index for leads, using the same underlying project and tracker data.</PageIntro>
+      <section className="workstream-grid">
+        {streams.map((stream) => {
+          const next = schedule.items.filter((item) => item.stream === stream && item.status !== "complete").sort((a, b) => bySoonest(a.finishDate, b.finishDate))[0];
+          const risks = openRisks(tracker).filter((risk) => risk.stream === stream).length;
+          const actions = openActions(tracker).filter((action) => action.stream === stream).length;
+          return (
+            <article className="report-card" key={stream}>
+              <h3>{stream}</h3>
+              <p><strong>Next milestone:</strong> {next ? `${formatDate(next.finishDate)} - ${next.name}` : "None found"}</p>
+              <p><strong>Open risks:</strong> {risks}</p>
+              <p><strong>Open actions:</strong> {actions}</p>
+            </article>
+          );
+        })}
+      </section>
+    </>
+  );
+}
+
+function PartnerView({ schedule, tracker }: { schedule: ProgrammeSchedule; tracker?: TrackerData }) {
+  const partnerItems = schedule.items.filter((item) => /partner|working group|adopter|industry|pilot/i.test(`${item.name} ${item.stream}`)).slice(0, 10);
+  return (
+    <>
+      <PageIntro title="Partner View" tracker={tracker}>A restricted-audience view scaffold for partner timelines, asks and working group dates.</PageIntro>
+      <div className="report-grid two">
+        <ItemList title="Partner Timeline" items={partnerItems.map((item) => ({ id: item.uid, title: item.name, meta: `${formatDate(item.finishDate)} · ${item.stream ?? "No stream"}`, status: item.status }))} />
+        <ItemList title="Partner Actions" items={openActions(tracker).filter((action) => /partner|working group|adopter|industry|pilot/i.test(`${action.title} ${action.description} ${action.stream}`)).map((action) => ({ id: action.id, title: action.title, meta: `${formatDate(action.dueDate)} · ${action.owner ?? "No owner"}`, status: action.status }))} />
+      </div>
+    </>
+  );
+}
+
+function ReleasePlaceholder({ title }: { title: string }) {
+  return (
+    <section className="empty-panel">
+      <h2>{title}</h2>
+      <p>The Release Plan data source has intentionally not been inferred from the current XML or tracker. This page is reserved for the release plan file once it is available.</p>
+      <p>The build now has a separate release-plan slot, so versions, scope, acceptance criteria and readiness can be added cleanly without reworking the current reporting pages.</p>
+    </section>
+  );
+}
+
+function DownloadsHub({ schedule, tracker }: { schedule: ProgrammeSchedule; tracker?: TrackerData }) {
+  return (
+    <>
+      <PageIntro title="Downloads" tracker={tracker}>A central location for current exports and future audience-specific report packs.</PageIntro>
+      <section className="download-grid">
+        {[
+          ["Programme roadmap PDF", "Available from the Roadmap Workspace"],
+          ["Programme poster PDF", "Available from the Roadmap Workspace"],
+          ["Normalised schedule JSON", "Available from the Roadmap Workspace"],
+          ["CEO summary PDF", "Next export candidate"],
+          ["Board report PDF", "Next export candidate"],
+          ["Risk and issue report", tracker ? "Tracker data imported" : "Import tracker first"],
+          ["Gantt extract", `${schedule.items.length} plan items available`],
+          ["Partner roadmap", "Partner view scaffold ready"],
+        ].map(([title, meta]) => (
+          <article className="report-card" key={title}>
+            <h3>{title}</h3>
+            <p>{meta}</p>
+          </article>
+        ))}
+      </section>
+    </>
+  );
+}
+
+function ReportingContent({
+  page,
+  schedule,
+  tracker,
+  dateWindow,
+  selected,
+  setSelected,
+}: {
+  page: AppPage;
+  schedule: ProgrammeSchedule;
+  tracker?: TrackerData;
+  dateWindow: DateWindow;
+  selected?: ProgrammeItem;
+  setSelected: (item: ProgrammeItem) => void;
+}) {
+  if (page === "home") return <HomeDashboard schedule={schedule} tracker={tracker} dateWindow={dateWindow} />;
+  if (page === "ceo") return <CEOView schedule={schedule} tracker={tracker} />;
+  if (page === "board") return <BoardReportView schedule={schedule} tracker={tracker} dateWindow={dateWindow} />;
+  if (page === "reporting-roadmap") return <ReportingRoadmapView schedule={schedule} dateWindow={dateWindow} selected={selected} onSelect={setSelected} />;
+  if (page === "risks") return <RisksIssuesView tracker={tracker} />;
+  if (page === "actions") return <ActionsDecisionsView schedule={schedule} tracker={tracker} dateWindow={dateWindow} />;
+  if (page === "dependencies") return <DependencyView schedule={schedule} tracker={tracker} />;
+  if (page === "workstreams") return <WorkstreamViews schedule={schedule} tracker={tracker} />;
+  if (page === "partner") return <PartnerView schedule={schedule} tracker={tracker} />;
+  if (page === "downloads") return <DownloadsHub schedule={schedule} tracker={tracker} />;
+  if (page === "release-roadmap") return <ReleasePlaceholder title="Release Roadmap" />;
+  if (page === "version-scope") return <ReleasePlaceholder title="Version Scope" />;
+  if (page === "release-readiness") return <ReleasePlaceholder title="Release Readiness" />;
+  return null;
+}
+
 function DetailDrawer({ item, onClose }: { item?: ProgrammeItem; onClose: () => void }) {
   if (!item) return null;
   const fields = [
@@ -452,8 +925,10 @@ function DetailDrawer({ item, onClose }: { item?: ProgrammeItem; onClose: () => 
 
 function App() {
   const [schedule, setSchedule] = useState<ProgrammeSchedule>(makeSampleSchedule());
+  const [tracker, setTracker] = useState<TrackerData | undefined>();
   const [filters, setFilters] = useState<ProgrammeFilters>(initialFilters);
   const [view, setView] = useState<ProgrammeView>("roadmap");
+  const [page, setPage] = useState<AppPage>("workspace");
   const [selected, setSelected] = useState<ProgrammeItem | undefined>();
   const [error, setError] = useState<string | undefined>();
   const [baselineNumber, setBaselineNumber] = useState(3);
@@ -502,6 +977,16 @@ function App() {
       setSelected(undefined);
     } catch (err) {
       setError(err instanceof Error ? err.message : "The file could not be imported.");
+    }
+  }
+
+  async function importTracker(file: File) {
+    setError(undefined);
+    try {
+      const parsed = await parseMeetingTracker(file);
+      setTracker(parsed);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "The tracker workbook could not be imported.");
     }
   }
 
@@ -569,41 +1054,61 @@ function App() {
             Import Project XML
             <input type="file" accept=".xml,text/xml,application/xml" onChange={(event) => event.target.files?.[0] && importFile(event.target.files[0])} />
           </label>
+          <label className="upload-button secondary">
+            <FileSpreadsheet size={18} />
+            Import Tracker XLSX
+            <input type="file" accept=".xlsx,.xls,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel" onChange={(event) => event.target.files?.[0] && importTracker(event.target.files[0])} />
+          </label>
         </div>
       </header>
 
       {error ? <div className="error">{error}</div> : null}
       <SummaryBar schedule={schedule} />
+      <nav className="app-nav" aria-label="Application sections">
+        {appPages.map((item) => (
+          <button type="button" className={`${page === item.key ? "active" : ""} ${item.group}`} onClick={() => setPage(item.key)} key={item.key}>
+            {item.key === "workspace" ? <Layers size={15} /> : item.group === "future" ? <CalendarDays size={15} /> : item.key === "workstreams" || item.key === "partner" ? <Users size={15} /> : item.key === "actions" ? <ClipboardCheck size={15} /> : <LayoutDashboard size={15} />}
+            {item.label}
+          </button>
+        ))}
+      </nav>
 
-      <div className="workspace">
-        <FilterPanel schedule={schedule} filters={filters} setFilters={setFilters} />
-        <section className="content">
-          <div className="view-bar">
-            <div className="tabs">
-              {(Object.keys(viewLabels) as ProgrammeView[]).map((key) => (
-                <button type="button" className={view === key ? "active" : ""} onClick={() => setView(key)} key={key}>
-                  {key === "roadmap" ? <Layers size={15} /> : key === "milestones" ? <Milestone size={15} /> : key === "governance" ? <ShieldCheck size={15} /> : key === "schedule" ? <GitBranch size={15} /> : <CalendarDays size={15} />}
-                  {viewLabels[key]}
-                </button>
-              ))}
+      {page === "workspace" ? (
+        <div className="workspace">
+          <FilterPanel schedule={schedule} filters={filters} setFilters={setFilters} />
+          <section className="content">
+            <div className="view-bar">
+              <div className="tabs">
+                {(Object.keys(viewLabels) as ProgrammeView[]).map((key) => (
+                  <button type="button" className={view === key ? "active" : ""} onClick={() => setView(key)} key={key}>
+                    {key === "roadmap" ? <Layers size={15} /> : key === "milestones" ? <Milestone size={15} /> : key === "governance" ? <ShieldCheck size={15} /> : key === "schedule" ? <GitBranch size={15} /> : <CalendarDays size={15} />}
+                    {viewLabels[key]}
+                  </button>
+                ))}
+              </div>
+              <div className="controls">
+                <label>
+                  <SlidersHorizontal size={15} />
+                  Baseline
+                  <select value={baselineNumber} onChange={(event) => setBaselineNumber(Number(event.target.value))}>
+                    {[0, 1, 2, 3].map((baseline) => <option key={baseline} value={baseline}>Baseline {baseline}</option>)}
+                  </select>
+                </label>
+                <button type="button" onClick={exportPdf}><Download size={15} /> PDF</button>
+                <button type="button" onClick={exportPosterPdf}><Download size={15} /> Poster PDF</button>
+                <button type="button" onClick={exportJson}><Download size={15} /> JSON</button>
+              </div>
             </div>
-            <div className="controls">
-              <label>
-                <SlidersHorizontal size={15} />
-                Baseline
-                <select value={baselineNumber} onChange={(event) => setBaselineNumber(Number(event.target.value))}>
-                  {[0, 1, 2, 3].map((baseline) => <option key={baseline} value={baseline}>Baseline {baseline}</option>)}
-                </select>
-              </label>
-              <button type="button" onClick={exportPdf}><Download size={15} /> PDF</button>
-              <button type="button" onClick={exportPosterPdf}><Download size={15} /> Poster PDF</button>
-              <button type="button" onClick={exportJson}><Download size={15} /> JSON</button>
-            </div>
-          </div>
-          <Timeline schedule={schedule} items={visibleItems} selected={selected} onSelect={setSelected} dateWindow={dateWindow} />
-          <InsightsPanel schedule={schedule} />
+            <Timeline schedule={schedule} items={visibleItems} selected={selected} onSelect={setSelected} dateWindow={dateWindow} />
+            <InsightsPanel schedule={schedule} />
+          </section>
+        </div>
+      ) : (
+        <section className="reporting-shell">
+          <ReportingPeriodControl filters={filters} setFilters={setFilters} />
+          <ReportingContent page={page} schedule={schedule} tracker={tracker} dateWindow={dateWindow} selected={selected} setSelected={setSelected} />
         </section>
-      </div>
+      )}
       <DetailDrawer item={selected} onClose={() => setSelected(undefined)} />
     </main>
   );
