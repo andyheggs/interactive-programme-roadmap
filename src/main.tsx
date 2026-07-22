@@ -27,6 +27,7 @@ import {
   X,
 } from "lucide-react";
 import { exportProgrammePdf } from "./lib/exportProgrammePdf";
+import { exportElementPdf } from "./lib/exportElementPdf";
 import { parseMicrosoftProjectXml } from "./lib/parseMicrosoftProjectXml";
 import { parseMeetingTracker } from "./lib/parseMeetingTracker";
 import { clamp, formatDate, parseDate, uniqueSorted } from "./lib/dateUtils";
@@ -720,7 +721,17 @@ function CEOView({ schedule, tracker }: { schedule: ProgrammeSchedule; tracker?:
   );
 }
 
-function ExecutiveSnapshotView({ schedule, tracker, dateWindow }: { schedule: ProgrammeSchedule; tracker?: TrackerData; dateWindow: DateWindow }) {
+function ExecutiveSnapshotView({
+  schedule,
+  tracker,
+  dateWindow,
+  onExportSnapshotPdf,
+}: {
+  schedule: ProgrammeSchedule;
+  tracker?: TrackerData;
+  dateWindow: DateWindow;
+  onExportSnapshotPdf?: () => void;
+}) {
   const weekly = latestWeeklySummary(tracker);
   const decisions = openDecisions(tracker)
     .slice()
@@ -762,110 +773,120 @@ function ExecutiveSnapshotView({ schedule, tracker, dateWindow }: { schedule: Pr
 
   return (
     <>
-      <PageIntro title="Executive Snapshot" tracker={tracker}>A clean meeting view for the current programme position, the steer needed, and the items most likely to affect go-live.</PageIntro>
-      <section className={`executive-snapshot rag-${ragTone}`}>
-        <div className="snapshot-hero">
-          <div>
-            <span className="snapshot-eyebrow"><Target size={15} /> Programme position</span>
-            <h2>{schedule.title}</h2>
-            <p>{weekly?.openingLine ?? "Import the latest meeting tracker to populate the current executive narrative."}</p>
+      <div id="executive-snapshot-export" className="snapshot-export-target">
+        <PageIntro title="Executive Snapshot" tracker={tracker}>A clean meeting view for the current programme position, the steer needed, and the items most likely to affect go-live.</PageIntro>
+        <section className={`executive-snapshot rag-${ragTone}`}>
+          <div className="snapshot-hero">
+            <div>
+              <span className="snapshot-eyebrow"><Target size={15} /> Programme position</span>
+              <h2>{schedule.title}</h2>
+              <p>{weekly?.openingLine ?? "Import the latest meeting tracker to populate the current executive narrative."}</p>
+            </div>
+            <div className="snapshot-rag">
+              <span>Overall RAG</span>
+              <strong>{weekly?.overallRag ?? "Not set"}</strong>
+              <small>{weekly?.ragMovement ? `Movement: ${weekly.ragMovement}` : "Movement not set"}</small>
+            </div>
           </div>
-          <div className="snapshot-rag">
-            <span>Overall RAG</span>
-            <strong>{weekly?.overallRag ?? "Not set"}</strong>
-            <small>{weekly?.ragMovement ? `Movement: ${weekly.ragMovement}` : "Movement not set"}</small>
+
+          <div className="snapshot-kpis">
+            <article className={`snapshot-kpi tone-${ragTone}`}>
+              <AlertTriangle size={18} />
+              <span>Go-live confidence</span>
+              <strong>{weekly?.goLiveConfidence ?? "Not set"}</strong>
+            </article>
+            <article className="snapshot-kpi tone-blue">
+              <Clock size={18} />
+              <span>Programme finish</span>
+              <strong>{formatDate(schedule.finishDate)}</strong>
+            </article>
+            <article className="snapshot-kpi tone-amber">
+              <ArrowRight size={18} />
+              <span>Steer required</span>
+              <strong>{weekly?.steerRequired ?? (decisions.length ? "Yes" : "Not set")}</strong>
+            </article>
+            <article className="snapshot-kpi tone-green">
+              <CheckCircle2 size={18} />
+              <span>Latest meeting</span>
+              <strong>{latestMeeting}</strong>
+            </article>
           </div>
-        </div>
 
-        <div className="snapshot-kpis">
-          <article className={`snapshot-kpi tone-${ragTone}`}>
-            <AlertTriangle size={18} />
-            <span>Go-live confidence</span>
-            <strong>{weekly?.goLiveConfidence ?? "Not set"}</strong>
-          </article>
-          <article className="snapshot-kpi tone-blue">
-            <Clock size={18} />
-            <span>Programme finish</span>
-            <strong>{formatDate(schedule.finishDate)}</strong>
-          </article>
-          <article className="snapshot-kpi tone-amber">
-            <ArrowRight size={18} />
-            <span>Steer required</span>
-            <strong>{weekly?.steerRequired ?? (decisions.length ? "Yes" : "Not set")}</strong>
-          </article>
-          <article className="snapshot-kpi tone-green">
-            <CheckCircle2 size={18} />
-            <span>Latest meeting</span>
-            <strong>{latestMeeting}</strong>
-          </article>
-        </div>
+          <div className="snapshot-focus-grid">
+            <article className="snapshot-panel snapshot-ask">
+              <span>Ask / Steer Needed</span>
+              <strong>{weekly?.askSteerNeeded ?? decisions[0]?.title ?? "None currently flagged."}</strong>
+            </article>
+            <article className="snapshot-panel snapshot-blocker">
+              <span>Main Blocker</span>
+              <strong>{weekly?.mainBlocker ?? blockers[0]?.title ?? "None currently flagged."}</strong>
+            </article>
+          </div>
 
-        <div className="snapshot-focus-grid">
-          <article className="snapshot-panel snapshot-ask">
-            <span>Ask / Steer Needed</span>
-            <strong>{weekly?.askSteerNeeded ?? decisions[0]?.title ?? "None currently flagged."}</strong>
-          </article>
-          <article className="snapshot-panel snapshot-blocker">
-            <span>Main Blocker</span>
-            <strong>{weekly?.mainBlocker ?? blockers[0]?.title ?? "None currently flagged."}</strong>
-          </article>
+          <div className="snapshot-section-grid">
+            <article className="snapshot-section">
+              <h3>Key Narrative</h3>
+              {narrative.length ? narrative.map((item) => <p key={item}>{item}</p>) : <p className="snapshot-empty">No weekly narrative has been imported yet.</p>}
+            </article>
+            <article className="snapshot-section">
+              <h3>Decisions Needed</h3>
+              <div className="snapshot-list">
+                {decisions.length ? decisions.map((decision) => (
+                  <article key={decision.id}>
+                    <strong>{decision.title}</strong>
+                    <span>{formatDateOrText(decision.decisionRequiredByLabel ?? decision.decisionRequiredBy)} - {decision.decisionMaker ?? decision.owner ?? "Owner not set"}</span>
+                    {decision.status ? <em>{decision.status}</em> : null}
+                  </article>
+                )) : <p className="snapshot-empty">No open decisions found.</p>}
+              </div>
+            </article>
+            <article className="snapshot-section">
+              <h3>Top Risks / Issues</h3>
+              <div className="snapshot-list">
+                {blockers.length ? blockers.map((item) => (
+                  <article key={`${item.kind}-${item.id}`}>
+                    <strong>{item.title}</strong>
+                    <span>{item.kind} - {item.meta}</span>
+                    {item.status ? <em>{item.status}</em> : null}
+                  </article>
+                )) : <p className="snapshot-empty">No high priority blockers found.</p>}
+              </div>
+            </article>
+            <article className="snapshot-section">
+              <h3>Next High-Level Milestones</h3>
+              <div className="snapshot-list">
+                {milestones.length ? milestones.map((item) => (
+                  <article key={item.uid}>
+                    <strong>{item.name}</strong>
+                    <span>{formatDate(item.finishDate)} - {item.stream ?? "No stream"}</span>
+                    {item.status ? <em>{item.status}</em> : null}
+                  </article>
+                )) : <p className="snapshot-empty">No high-level milestones found in the selected date window.</p>}
+              </div>
+            </article>
+            <article className="snapshot-section snapshot-wide">
+              <h3>Priority Actions</h3>
+              <div className="snapshot-list snapshot-list-compact">
+                {actions.length ? actions.map((action) => (
+                  <article key={action.id}>
+                    <strong>{action.title}</strong>
+                    <span>{formatDate(action.dueDate)} - {action.owner ?? "Owner not set"}</span>
+                    {action.status ? <em>{action.status}</em> : null}
+                  </article>
+                )) : <p className="snapshot-empty">No dashboard or high priority actions found.</p>}
+              </div>
+            </article>
+          </div>
+        </section>
+      </div>
+      {onExportSnapshotPdf ? (
+        <div className="snapshot-actions">
+          <button className="download-action" type="button" onClick={onExportSnapshotPdf}>
+            <Download size={15} />
+            Download Snapshot PDF
+          </button>
         </div>
-
-        <div className="snapshot-section-grid">
-          <article className="snapshot-section">
-            <h3>Key Narrative</h3>
-            {narrative.length ? narrative.map((item) => <p key={item}>{item}</p>) : <p className="snapshot-empty">No weekly narrative has been imported yet.</p>}
-          </article>
-          <article className="snapshot-section">
-            <h3>Decisions Needed</h3>
-            <div className="snapshot-list">
-              {decisions.length ? decisions.map((decision) => (
-                <article key={decision.id}>
-                  <strong>{decision.title}</strong>
-                  <span>{formatDateOrText(decision.decisionRequiredByLabel ?? decision.decisionRequiredBy)} - {decision.decisionMaker ?? decision.owner ?? "Owner not set"}</span>
-                  {decision.status ? <em>{decision.status}</em> : null}
-                </article>
-              )) : <p className="snapshot-empty">No open decisions found.</p>}
-            </div>
-          </article>
-          <article className="snapshot-section">
-            <h3>Top Risks / Issues</h3>
-            <div className="snapshot-list">
-              {blockers.length ? blockers.map((item) => (
-                <article key={`${item.kind}-${item.id}`}>
-                  <strong>{item.title}</strong>
-                  <span>{item.kind} - {item.meta}</span>
-                  {item.status ? <em>{item.status}</em> : null}
-                </article>
-              )) : <p className="snapshot-empty">No high priority blockers found.</p>}
-            </div>
-          </article>
-          <article className="snapshot-section">
-            <h3>Next High-Level Milestones</h3>
-            <div className="snapshot-list">
-              {milestones.length ? milestones.map((item) => (
-                <article key={item.uid}>
-                  <strong>{item.name}</strong>
-                  <span>{formatDate(item.finishDate)} - {item.stream ?? "No stream"}</span>
-                  {item.status ? <em>{item.status}</em> : null}
-                </article>
-              )) : <p className="snapshot-empty">No high-level milestones found in the selected date window.</p>}
-            </div>
-          </article>
-          <article className="snapshot-section snapshot-wide">
-            <h3>Priority Actions</h3>
-            <div className="snapshot-list snapshot-list-compact">
-              {actions.length ? actions.map((action) => (
-                <article key={action.id}>
-                  <strong>{action.title}</strong>
-                  <span>{formatDate(action.dueDate)} - {action.owner ?? "Owner not set"}</span>
-                  {action.status ? <em>{action.status}</em> : null}
-                </article>
-              )) : <p className="snapshot-empty">No dashboard or high priority actions found.</p>}
-            </div>
-          </article>
-        </div>
-      </section>
+      ) : null}
     </>
   );
 }
@@ -1012,15 +1033,19 @@ function ReleasePlaceholder({ title }: { title: string }) {
 function DownloadsHub({
   schedule,
   tracker,
+  dateWindow,
   onExportPdf,
   onExportPosterPdf,
   onExportJson,
+  onExportSnapshotPdf,
 }: {
   schedule: ProgrammeSchedule;
   tracker?: TrackerData;
+  dateWindow: DateWindow;
   onExportPdf: () => void;
   onExportPosterPdf: () => void;
   onExportJson: () => void;
+  onExportSnapshotPdf: () => void;
 }) {
   const downloads = [
     {
@@ -1043,9 +1068,9 @@ function DownloadsHub({
     },
     {
       title: "Executive snapshot PDF",
-      meta: "Planned export for the meeting-ready snapshot view.",
-      action: "Coming soon",
-      disabled: true,
+      meta: "Exports the meeting-ready Executive Snapshot dashboard.",
+      action: "Download Snapshot",
+      onClick: onExportSnapshotPdf,
     },
     {
       title: "Board report PDF",
@@ -1090,6 +1115,9 @@ function DownloadsHub({
           </article>
         ))}
       </section>
+      <div className="snapshot-export-mount" aria-hidden="true">
+        <ExecutiveSnapshotView schedule={schedule} tracker={tracker} dateWindow={dateWindow} />
+      </div>
     </>
   );
 }
@@ -1104,6 +1132,7 @@ function ReportingContent({
   onExportPdf,
   onExportPosterPdf,
   onExportJson,
+  onExportSnapshotPdf,
 }: {
   page: AppPage;
   schedule: ProgrammeSchedule;
@@ -1114,9 +1143,10 @@ function ReportingContent({
   onExportPdf: () => void;
   onExportPosterPdf: () => void;
   onExportJson: () => void;
+  onExportSnapshotPdf: () => void;
 }) {
   if (page === "home") return <HomeDashboard schedule={schedule} tracker={tracker} dateWindow={dateWindow} />;
-  if (page === "ceo") return <ExecutiveSnapshotView schedule={schedule} tracker={tracker} dateWindow={dateWindow} />;
+  if (page === "ceo") return <ExecutiveSnapshotView schedule={schedule} tracker={tracker} dateWindow={dateWindow} onExportSnapshotPdf={onExportSnapshotPdf} />;
   if (page === "board") return <BoardReportView schedule={schedule} tracker={tracker} dateWindow={dateWindow} />;
   if (page === "reporting-roadmap") return <ReportingRoadmapView schedule={schedule} dateWindow={dateWindow} selected={selected} onSelect={setSelected} />;
   if (page === "risks") return <RisksIssuesView tracker={tracker} />;
@@ -1124,7 +1154,7 @@ function ReportingContent({
   if (page === "dependencies") return <DependencyView schedule={schedule} tracker={tracker} />;
   if (page === "workstreams") return <WorkstreamViews schedule={schedule} tracker={tracker} />;
   if (page === "partner") return <PartnerView schedule={schedule} tracker={tracker} />;
-  if (page === "downloads") return <DownloadsHub schedule={schedule} tracker={tracker} onExportPdf={onExportPdf} onExportPosterPdf={onExportPosterPdf} onExportJson={onExportJson} />;
+  if (page === "downloads") return <DownloadsHub schedule={schedule} tracker={tracker} dateWindow={dateWindow} onExportPdf={onExportPdf} onExportPosterPdf={onExportPosterPdf} onExportJson={onExportJson} onExportSnapshotPdf={onExportSnapshotPdf} />;
   if (page === "release-roadmap") return <ReleasePlaceholder title="Release Roadmap" />;
   if (page === "version-scope") return <ReleasePlaceholder title="Version Scope" />;
   if (page === "release-readiness") return <ReleasePlaceholder title="Release Readiness" />;
@@ -1282,6 +1312,21 @@ function App() {
     }
   }
 
+  async function exportExecutiveSnapshotPdf() {
+    setError(undefined);
+    try {
+      const element = document.getElementById("executive-snapshot-export");
+      if (!element) throw new Error("Open the Executive Snapshot page or Downloads page before exporting the snapshot.");
+      await exportElementPdf({
+        element,
+        title: schedule.title,
+        fileNameSuffix: "executive-snapshot",
+      });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "The Executive Snapshot PDF could not be generated.");
+    }
+  }
+
   return (
     <main>
       <header className="app-header">
@@ -1362,6 +1407,7 @@ function App() {
             onExportPdf={exportPdf}
             onExportPosterPdf={exportPosterPdf}
             onExportJson={exportJson}
+            onExportSnapshotPdf={exportExecutiveSnapshotPdf}
           />
         </section>
       )}

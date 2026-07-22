@@ -537,6 +537,27 @@ h1 { max-width: 980px; margin-bottom: 8px; font-size: clamp(1.55rem, 3vw, 2.4rem
   display: grid;
   gap: 14px;
 }
+.snapshot-export-target {
+  background: var(--page);
+}
+.snapshot-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 14px;
+}
+.snapshot-export-mount {
+  position: fixed;
+  top: 0;
+  left: -10000px;
+  width: 1180px;
+  padding: 18px;
+  background: var(--page);
+  pointer-events: none;
+}
+body.snapshot-exporting * {
+  animation: none !important;
+  transition: none !important;
+}
 .snapshot-hero {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 190px;
