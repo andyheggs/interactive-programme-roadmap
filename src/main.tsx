@@ -841,7 +841,7 @@ function ExecutiveSnapshotView({ schedule, tracker, dateWindow }: { schedule: Pr
             </div>
           </article>
           <article className="snapshot-section">
-            <h3>Next Critical Milestones</h3>
+            <h3>Next High-Level Milestones</h3>
             <div className="snapshot-list">
               {milestones.length ? milestones.map((item) => (
                 <article key={item.uid}>
@@ -849,7 +849,7 @@ function ExecutiveSnapshotView({ schedule, tracker, dateWindow }: { schedule: Pr
                   <span>{formatDate(item.finishDate)} - {item.stream ?? "No stream"}</span>
                   {item.status ? <em>{item.status}</em> : null}
                 </article>
-              )) : <p className="snapshot-empty">No milestones found in the selected date window.</p>}
+              )) : <p className="snapshot-empty">No high-level milestones found in the selected date window.</p>}
             </div>
           </article>
           <article className="snapshot-section snapshot-wide">
