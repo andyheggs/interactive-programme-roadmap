@@ -1009,24 +1009,84 @@ function ReleasePlaceholder({ title }: { title: string }) {
   );
 }
 
-function DownloadsHub({ schedule, tracker }: { schedule: ProgrammeSchedule; tracker?: TrackerData }) {
+function DownloadsHub({
+  schedule,
+  tracker,
+  onExportPdf,
+  onExportPosterPdf,
+  onExportJson,
+}: {
+  schedule: ProgrammeSchedule;
+  tracker?: TrackerData;
+  onExportPdf: () => void;
+  onExportPosterPdf: () => void;
+  onExportJson: () => void;
+}) {
+  const downloads = [
+    {
+      title: "Programme roadmap PDF",
+      meta: "Exports the current roadmap workspace view using the selected filters and date window.",
+      action: "Download PDF",
+      onClick: onExportPdf,
+    },
+    {
+      title: "Programme poster PDF",
+      meta: "Exports the visual poster timeline for senior stakeholder sharing.",
+      action: "Download Poster",
+      onClick: onExportPosterPdf,
+    },
+    {
+      title: "Normalised schedule JSON",
+      meta: `${schedule.items.length} plan items available from the imported XML.`,
+      action: "Download JSON",
+      onClick: onExportJson,
+    },
+    {
+      title: "Executive snapshot PDF",
+      meta: "Planned export for the meeting-ready snapshot view.",
+      action: "Coming soon",
+      disabled: true,
+    },
+    {
+      title: "Board report PDF",
+      meta: "Planned export for board reporting packs.",
+      action: "Coming soon",
+      disabled: true,
+    },
+    {
+      title: "Risk and issue report",
+      meta: tracker ? "Tracker data imported and ready for a future export." : "Import tracker first.",
+      action: "Coming soon",
+      disabled: true,
+    },
+    {
+      title: "Gantt extract",
+      meta: "Planned extract for schedule analysis.",
+      action: "Coming soon",
+      disabled: true,
+    },
+    {
+      title: "Partner roadmap",
+      meta: "Planned export for partner-facing roadmap views.",
+      action: "Coming soon",
+      disabled: true,
+    },
+  ];
+
   return (
     <>
       <PageIntro title="Downloads" tracker={tracker}>A central location for current exports and future audience-specific report packs.</PageIntro>
       <section className="download-grid">
-        {[
-          ["Programme roadmap PDF", "Available from the Roadmap Workspace"],
-          ["Programme poster PDF", "Available from the Roadmap Workspace"],
-          ["Normalised schedule JSON", "Available from the Roadmap Workspace"],
-          ["CEO summary PDF", "Next export candidate"],
-          ["Board report PDF", "Next export candidate"],
-          ["Risk and issue report", tracker ? "Tracker data imported" : "Import tracker first"],
-          ["Gantt extract", `${schedule.items.length} plan items available`],
-          ["Partner roadmap", "Partner view scaffold ready"],
-        ].map(([title, meta]) => (
-          <article className="report-card" key={title}>
-            <h3>{title}</h3>
-            <p>{meta}</p>
+        {downloads.map((item) => (
+          <article className="report-card download-card" key={item.title}>
+            <div>
+              <h3>{item.title}</h3>
+              <p>{item.meta}</p>
+            </div>
+            <button className="download-action" type="button" onClick={item.onClick} disabled={item.disabled}>
+              <Download size={15} />
+              {item.action}
+            </button>
           </article>
         ))}
       </section>
@@ -1041,6 +1101,9 @@ function ReportingContent({
   dateWindow,
   selected,
   setSelected,
+  onExportPdf,
+  onExportPosterPdf,
+  onExportJson,
 }: {
   page: AppPage;
   schedule: ProgrammeSchedule;
@@ -1048,6 +1111,9 @@ function ReportingContent({
   dateWindow: DateWindow;
   selected?: ProgrammeItem;
   setSelected: (item: ProgrammeItem) => void;
+  onExportPdf: () => void;
+  onExportPosterPdf: () => void;
+  onExportJson: () => void;
 }) {
   if (page === "home") return <HomeDashboard schedule={schedule} tracker={tracker} dateWindow={dateWindow} />;
   if (page === "ceo") return <ExecutiveSnapshotView schedule={schedule} tracker={tracker} dateWindow={dateWindow} />;
@@ -1058,7 +1124,7 @@ function ReportingContent({
   if (page === "dependencies") return <DependencyView schedule={schedule} tracker={tracker} />;
   if (page === "workstreams") return <WorkstreamViews schedule={schedule} tracker={tracker} />;
   if (page === "partner") return <PartnerView schedule={schedule} tracker={tracker} />;
-  if (page === "downloads") return <DownloadsHub schedule={schedule} tracker={tracker} />;
+  if (page === "downloads") return <DownloadsHub schedule={schedule} tracker={tracker} onExportPdf={onExportPdf} onExportPosterPdf={onExportPosterPdf} onExportJson={onExportJson} />;
   if (page === "release-roadmap") return <ReleasePlaceholder title="Release Roadmap" />;
   if (page === "version-scope") return <ReleasePlaceholder title="Version Scope" />;
   if (page === "release-readiness") return <ReleasePlaceholder title="Release Readiness" />;
@@ -1286,7 +1352,17 @@ function App() {
       ) : (
         <section className="reporting-shell">
           <ReportingPeriodControl filters={filters} setFilters={setFilters} />
-          <ReportingContent page={page} schedule={schedule} tracker={tracker} dateWindow={dateWindow} selected={selected} setSelected={setSelected} />
+          <ReportingContent
+            page={page}
+            schedule={schedule}
+            tracker={tracker}
+            dateWindow={dateWindow}
+            selected={selected}
+            setSelected={setSelected}
+            onExportPdf={exportPdf}
+            onExportPosterPdf={exportPosterPdf}
+            onExportJson={exportJson}
+          />
         </section>
       )}
       <DetailDrawer item={selected} onClose={() => setSelected(undefined)} />

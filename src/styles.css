@@ -733,6 +733,36 @@ h1 { max-width: 980px; margin-bottom: 8px; font-size: clamp(1.55rem, 3vw, 2.4rem
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 12px;
 }
+.download-card {
+  display: grid;
+  gap: 14px;
+  align-content: space-between;
+  min-height: 168px;
+}
+.download-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  width: fit-content;
+  min-height: 36px;
+  padding: 8px 12px;
+  border: 1px solid var(--active);
+  border-radius: 8px;
+  color: var(--active-text);
+  background: var(--active);
+  cursor: pointer;
+  font-weight: 900;
+}
+.download-action:hover:not(:disabled) {
+  filter: brightness(1.06);
+}
+.download-action:disabled {
+  color: var(--muted);
+  border-color: var(--border);
+  background: var(--surface-soft);
+  cursor: not-allowed;
+}
 
 .drawer {
   position: fixed;
