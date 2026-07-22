@@ -1,9 +1,13 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { createRoot } from "react-dom/client";
 import {
+  AlertTriangle,
+  ArrowRight,
   CalendarDays,
+  CheckCircle2,
   ChevronRight,
   ClipboardCheck,
+  Clock,
   Diamond,
   Download,
   FileUp,
@@ -18,6 +22,7 @@ import {
   ShieldCheck,
   SlidersHorizontal,
   Sun,
+  Target,
   Users,
   X,
 } from "lucide-react";
@@ -75,7 +80,7 @@ type AppPage =
 const appPages: Array<{ key: AppPage; label: string; group: "core" | "reporting" | "future" }> = [
   { key: "workspace", label: "Roadmap Workspace", group: "core" },
   { key: "home", label: "Home Dashboard", group: "reporting" },
-  { key: "ceo", label: "CEO View", group: "reporting" },
+  { key: "ceo", label: "Executive Snapshot", group: "reporting" },
   { key: "board", label: "Board Report", group: "reporting" },
   { key: "reporting-roadmap", label: "Reporting Roadmap", group: "reporting" },
   { key: "risks", label: "Risks & Issues", group: "reporting" },
@@ -474,6 +479,31 @@ function bySoonest(a?: string, b?: string): number {
   return (parseDate(a)?.getTime() ?? Number.MAX_SAFE_INTEGER) - (parseDate(b)?.getTime() ?? Number.MAX_SAFE_INTEGER);
 }
 
+function toneClass(value?: string): "red" | "amber" | "green" | "neutral" {
+  const text = value?.toLowerCase() ?? "";
+  if (text.includes("red") || text.includes("high")) return "red";
+  if (text.includes("amber") || text.includes("medium")) return "amber";
+  if (text.includes("green") || text.includes("low")) return "green";
+  return "neutral";
+}
+
+function sortFlaggedFirst<T extends { dashboardFlag?: boolean }>(items: T[]): T[] {
+  return items.slice().sort((a, b) => Number(Boolean(b.dashboardFlag)) - Number(Boolean(a.dashboardFlag)));
+}
+
+function splitDigest(value?: string, limit = 3): string[] {
+  const text = value?.trim();
+  if (!text) return [];
+  const lineParts = text.split(/\n+/).map((part) => part.trim()).filter(Boolean);
+  const parts = lineParts.length > 1 ? lineParts : text.split(/(?<=[.!?])\s+/).map((part) => part.trim()).filter(Boolean);
+  return parts.slice(0, limit);
+}
+
+function formatDateOrText(value?: string, fallback = "Not set"): string {
+  if (!value) return fallback;
+  return parseDate(value) ? formatDate(value) : value;
+}
+
 function itemImportance(item: ProgrammeItem): number {
   const level = item.milestoneLevel?.toLowerCase() ?? "";
   if (item.executiveMilestone || level.includes("executive")) return 5;
@@ -690,6 +720,156 @@ function CEOView({ schedule, tracker }: { schedule: ProgrammeSchedule; tracker?:
   );
 }
 
+function ExecutiveSnapshotView({ schedule, tracker, dateWindow }: { schedule: ProgrammeSchedule; tracker?: TrackerData; dateWindow: DateWindow }) {
+  const weekly = latestWeeklySummary(tracker);
+  const decisions = openDecisions(tracker)
+    .slice()
+    .sort((a, b) => Number(Boolean(b.dashboardFlag)) - Number(Boolean(a.dashboardFlag)) || bySoonest(a.decisionDate ?? a.decisionRequiredBy, b.decisionDate ?? b.decisionRequiredBy))
+    .slice(0, 4);
+  const blockers = sortFlaggedFirst([
+    ...openIssues(tracker)
+      .filter((issue) => issue.dashboardFlag || isRedOrAmber(issue.rag) || isRedOrAmber(issue.priority))
+      .map((issue) => ({
+        id: issue.id,
+        kind: "Issue",
+        title: issue.title,
+        meta: `${issue.stream ?? "No stream"} - ${issue.requiredAction ?? issue.requiredDecision ?? issue.latestUpdate ?? "No action recorded"}`,
+        status: issue.rag ?? issue.priority ?? issue.status,
+        dashboardFlag: issue.dashboardFlag,
+      })),
+    ...openRisks(tracker)
+      .filter((risk) => risk.dashboardFlag || isRedOrAmber(risk.rag))
+      .map((risk) => ({
+        id: risk.id,
+        kind: "Risk",
+        title: risk.title,
+        meta: `${risk.stream ?? "No stream"} - ${risk.mitigation ?? risk.latestUpdate ?? "No mitigation recorded"}`,
+        status: risk.rag ?? risk.status,
+        dashboardFlag: risk.dashboardFlag,
+      })),
+  ]).slice(0, 5);
+  const actions = openActions(tracker)
+    .filter((action) => action.dashboardFlag || isRedOrAmber(action.priority))
+    .sort((a, b) => Number(Boolean(b.dashboardFlag)) - Number(Boolean(a.dashboardFlag)) || bySoonest(a.dueDate, b.dueDate))
+    .slice(0, 5);
+  const milestones = periodMilestones(schedule, dateWindow)
+    .filter((item) => item.roadmapMilestone || item.executiveMilestone || item.boardReportable || item.governanceGate || itemImportance(item) >= 3)
+    .sort((a, b) => bySoonest(a.finishDate, b.finishDate))
+    .slice(0, 5);
+  const narrative = splitDigest(weekly?.ragRationale ?? weekly?.openingLine ?? weekly?.keyRisksOrIssues, 3);
+  const latestMeeting = formatDate(weekly?.meetingDate ?? weekly?.weekEnding);
+  const ragTone = toneClass(weekly?.overallRag);
+
+  return (
+    <>
+      <PageIntro title="Executive Snapshot" tracker={tracker}>A clean meeting view for the current programme position, the steer needed, and the items most likely to affect go-live.</PageIntro>
+      <section className={`executive-snapshot rag-${ragTone}`}>
+        <div className="snapshot-hero">
+          <div>
+            <span className="snapshot-eyebrow"><Target size={15} /> Programme position</span>
+            <h2>{schedule.title}</h2>
+            <p>{weekly?.openingLine ?? "Import the latest meeting tracker to populate the current executive narrative."}</p>
+          </div>
+          <div className="snapshot-rag">
+            <span>Overall RAG</span>
+            <strong>{weekly?.overallRag ?? "Not set"}</strong>
+            <small>{weekly?.ragMovement ? `Movement: ${weekly.ragMovement}` : "Movement not set"}</small>
+          </div>
+        </div>
+
+        <div className="snapshot-kpis">
+          <article className={`snapshot-kpi tone-${ragTone}`}>
+            <AlertTriangle size={18} />
+            <span>Go-live confidence</span>
+            <strong>{weekly?.goLiveConfidence ?? "Not set"}</strong>
+          </article>
+          <article className="snapshot-kpi tone-blue">
+            <Clock size={18} />
+            <span>Programme finish</span>
+            <strong>{formatDate(schedule.finishDate)}</strong>
+          </article>
+          <article className="snapshot-kpi tone-amber">
+            <ArrowRight size={18} />
+            <span>Steer required</span>
+            <strong>{weekly?.steerRequired ?? (decisions.length ? "Yes" : "Not set")}</strong>
+          </article>
+          <article className="snapshot-kpi tone-green">
+            <CheckCircle2 size={18} />
+            <span>Latest meeting</span>
+            <strong>{latestMeeting}</strong>
+          </article>
+        </div>
+
+        <div className="snapshot-focus-grid">
+          <article className="snapshot-panel snapshot-ask">
+            <span>Ask / Steer Needed</span>
+            <strong>{weekly?.askSteerNeeded ?? decisions[0]?.title ?? "None currently flagged."}</strong>
+          </article>
+          <article className="snapshot-panel snapshot-blocker">
+            <span>Main Blocker</span>
+            <strong>{weekly?.mainBlocker ?? blockers[0]?.title ?? "None currently flagged."}</strong>
+          </article>
+        </div>
+
+        <div className="snapshot-section-grid">
+          <article className="snapshot-section">
+            <h3>Key Narrative</h3>
+            {narrative.length ? narrative.map((item) => <p key={item}>{item}</p>) : <p className="snapshot-empty">No weekly narrative has been imported yet.</p>}
+          </article>
+          <article className="snapshot-section">
+            <h3>Decisions Needed</h3>
+            <div className="snapshot-list">
+              {decisions.length ? decisions.map((decision) => (
+                <article key={decision.id}>
+                  <strong>{decision.title}</strong>
+                  <span>{formatDateOrText(decision.decisionRequiredByLabel ?? decision.decisionRequiredBy)} - {decision.decisionMaker ?? decision.owner ?? "Owner not set"}</span>
+                  {decision.status ? <em>{decision.status}</em> : null}
+                </article>
+              )) : <p className="snapshot-empty">No open decisions found.</p>}
+            </div>
+          </article>
+          <article className="snapshot-section">
+            <h3>Top Risks / Issues</h3>
+            <div className="snapshot-list">
+              {blockers.length ? blockers.map((item) => (
+                <article key={`${item.kind}-${item.id}`}>
+                  <strong>{item.title}</strong>
+                  <span>{item.kind} - {item.meta}</span>
+                  {item.status ? <em>{item.status}</em> : null}
+                </article>
+              )) : <p className="snapshot-empty">No high priority blockers found.</p>}
+            </div>
+          </article>
+          <article className="snapshot-section">
+            <h3>Next Critical Milestones</h3>
+            <div className="snapshot-list">
+              {milestones.length ? milestones.map((item) => (
+                <article key={item.uid}>
+                  <strong>{item.name}</strong>
+                  <span>{formatDate(item.finishDate)} - {item.stream ?? "No stream"}</span>
+                  {item.status ? <em>{item.status}</em> : null}
+                </article>
+              )) : <p className="snapshot-empty">No milestones found in the selected date window.</p>}
+            </div>
+          </article>
+          <article className="snapshot-section snapshot-wide">
+            <h3>Priority Actions</h3>
+            <div className="snapshot-list snapshot-list-compact">
+              {actions.length ? actions.map((action) => (
+                <article key={action.id}>
+                  <strong>{action.title}</strong>
+                  <span>{formatDate(action.dueDate)} - {action.owner ?? "Owner not set"}</span>
+                  {action.status ? <em>{action.status}</em> : null}
+                </article>
+              )) : <p className="snapshot-empty">No dashboard or high priority actions found.</p>}
+            </div>
+          </article>
+        </div>
+      </section>
+    </>
+  );
+}
+
 function BoardReportView({ schedule, tracker, dateWindow }: { schedule: ProgrammeSchedule; tracker?: TrackerData; dateWindow: DateWindow }) {
   const weekly = latestWeeklySummary(tracker);
   const weeklyByDate = tracker?.weeklySummaries
@@ -870,7 +1050,7 @@ function ReportingContent({
   setSelected: (item: ProgrammeItem) => void;
 }) {
   if (page === "home") return <HomeDashboard schedule={schedule} tracker={tracker} dateWindow={dateWindow} />;
-  if (page === "ceo") return <CEOView schedule={schedule} tracker={tracker} />;
+  if (page === "ceo") return <ExecutiveSnapshotView schedule={schedule} tracker={tracker} dateWindow={dateWindow} />;
   if (page === "board") return <BoardReportView schedule={schedule} tracker={tracker} dateWindow={dateWindow} />;
   if (page === "reporting-roadmap") return <ReportingRoadmapView schedule={schedule} dateWindow={dateWindow} selected={selected} onSelect={setSelected} />;
   if (page === "risks") return <RisksIssuesView tracker={tracker} />;

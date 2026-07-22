@@ -18,6 +18,11 @@ export type WeeklySummary = {
   decisionsNeeded?: string;
   priorityActions?: string;
   openingLine?: string;
+  askSteerNeeded?: string;
+  mainBlocker?: string;
+  goLiveConfidence?: string;
+  ragMovement?: string;
+  steerRequired?: string;
   updateType?: string;
   lastUpdated?: string;
 };
@@ -82,6 +87,7 @@ export type TrackerDecision = {
   id: string;
   decisionDate?: string;
   decisionRequiredBy?: string;
+  decisionRequiredByLabel?: string;
   dashboardFlag?: boolean;
   decisionType?: string;
   lastDiscussedDate?: string;
