@@ -634,14 +634,6 @@ function recoveryConfidence(weekly: ReturnType<typeof latestWeeklySummary>, outc
   return "blue";
 }
 
-function taskMatchesOutcome(item: ProgrammeItem, outcome: ProgrammeItem): boolean {
-  const itemTarget = normaliseText(item.targetMilestone);
-  const outcomeTarget = normaliseText(outcome.targetMilestone);
-  if (itemTarget && outcomeTarget && itemTarget === outcomeTarget) return true;
-  if (itemTarget && (normaliseText(outcome.name).includes(itemTarget) || itemTarget.includes(normaliseText(outcome.name)))) return true;
-  return false;
-}
-
 function collectPredecessorDependencies(outcome: ProgrammeItem, byUid: Map<string, ProgrammeItem>): ProgrammeItem[] {
   const found = new Map<string, ProgrammeItem>();
   const seen = new Set<string>();
@@ -664,10 +656,9 @@ function executiveDependencyPaths(schedule: ProgrammeSchedule): ExecutivePath[] 
   const outcomes = executiveMilestoneItems(schedule).slice(0, 7);
   const byUid = new Map(schedule.items.map((item) => [item.uid, item]));
   return outcomes.map((outcome) => {
-    const sameTarget = schedule.items.filter((item) => item.uid !== outcome.uid && taskMatchesOutcome(item, outcome) && importantExecutiveDependency(item));
     const predecessors = collectPredecessorDependencies(outcome, byUid);
     const combined = new Map<string, ProgrammeItem>();
-    [...sameTarget, ...predecessors].forEach((item) => combined.set(item.uid, item));
+    predecessors.forEach((item) => combined.set(item.uid, item));
     const dependencies = [...combined.values()]
       .sort((a, b) => executiveDependencyScore(b) - executiveDependencyScore(a) || bySoonest(a.finishDate, b.finishDate))
       .slice(0, 5);
