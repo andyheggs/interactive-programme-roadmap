@@ -27,6 +27,10 @@ const FALLBACK_CUSTOM_FIELDS: Record<string, keyof ProgrammeItem> = {
   "188743758": "dependencyAnchor",
   "188743759": "governanceGate",
   "188743999": "ragStatus",
+  "188744006": "targetMilestone",
+  "188744007": "workstreamAccountableOwner",
+  "188744008": "deliverySupportRoles",
+  "188744009": "projectManagerAssurance",
 };
 
 function childText(node: Element, tag: string): string | undefined {

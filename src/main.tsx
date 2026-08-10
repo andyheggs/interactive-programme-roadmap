@@ -581,6 +581,25 @@ function significantDependency(item: ProgrammeItem): boolean {
   );
 }
 
+function executiveDependencyScore(item: ProgrammeItem): number {
+  const level = `${item.milestoneLevel ?? ""} ${item.dependencyLevel ?? ""}`.toLowerCase();
+  let score = 0;
+  if (item.executiveMilestone) score += 100;
+  if (item.dependencyAnchor) score += 80;
+  if (item.boardReportable) score += 60;
+  if (item.roadmapMilestone) score += 50;
+  if (item.decisionRequired) score += 35;
+  if (item.governanceGate) score += 25;
+  if (level.includes("executive")) score += 80;
+  if (level.includes("board")) score += 45;
+  if (level.includes("gate")) score += 30;
+  return score;
+}
+
+function importantExecutiveDependency(item: ProgrammeItem): boolean {
+  return executiveDependencyScore(item) > 0;
+}
+
 function executiveTone(item?: ProgrammeItem): ExecutiveTone {
   if (!item) return "grey";
   const rag = normaliseText(item.ragStatus);
@@ -633,7 +652,7 @@ function collectPredecessorDependencies(outcome: ProgrammeItem, byUid: Map<strin
       if (!link.predecessorUid) return;
       const predecessor = byUid.get(link.predecessorUid);
       if (!predecessor) return;
-      if (significantDependency(predecessor)) found.set(predecessor.uid, predecessor);
+      if (importantExecutiveDependency(predecessor)) found.set(predecessor.uid, predecessor);
       walk(predecessor, depth + 1);
     });
   };
@@ -645,12 +664,12 @@ function executiveDependencyPaths(schedule: ProgrammeSchedule): ExecutivePath[] 
   const outcomes = executiveMilestoneItems(schedule).slice(0, 7);
   const byUid = new Map(schedule.items.map((item) => [item.uid, item]));
   return outcomes.map((outcome) => {
-    const sameTarget = schedule.items.filter((item) => item.uid !== outcome.uid && taskMatchesOutcome(item, outcome) && significantDependency(item));
+    const sameTarget = schedule.items.filter((item) => item.uid !== outcome.uid && taskMatchesOutcome(item, outcome) && importantExecutiveDependency(item));
     const predecessors = collectPredecessorDependencies(outcome, byUid);
     const combined = new Map<string, ProgrammeItem>();
     [...sameTarget, ...predecessors].forEach((item) => combined.set(item.uid, item));
     const dependencies = [...combined.values()]
-      .sort((a, b) => bySoonest(a.finishDate, b.finishDate) || itemImportance(b) - itemImportance(a))
+      .sort((a, b) => executiveDependencyScore(b) - executiveDependencyScore(a) || bySoonest(a.finishDate, b.finishDate))
       .slice(0, 5);
     return { outcome, dependencies };
   });
@@ -874,7 +893,7 @@ function ExecutiveSnapshotView({
     : weekly?.ragRationale ?? "Import the latest meeting tracker to populate the current programme position.";
   const decisions = sortFlaggedFirst(openDecisions(tracker)).slice(0, 4);
   const upcomingSignificant = periodMilestones(schedule, dateWindow)
-    .filter((item) => significantDependency(item) && !item.executiveMilestone)
+    .filter((item) => importantExecutiveDependency(item) && !item.executiveMilestone)
     .sort((a, b) => bySoonest(a.finishDate, b.finishDate))
     .slice(0, 5);
   const watchlistItems = sortFlaggedFirst([
