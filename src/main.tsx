@@ -892,8 +892,8 @@ function ExecutiveSnapshotView({
     ? "Original July 2026 programme commitment missed"
     : weekly?.ragRationale ?? "Import the latest meeting tracker to populate the current programme position.";
   const decisions = sortFlaggedFirst(openDecisions(tracker)).slice(0, 4);
-  const upcomingSignificant = periodMilestones(schedule, dateWindow)
-    .filter((item) => importantExecutiveDependency(item) && !item.executiveMilestone)
+  const keyEnablers = [...new Map(paths.flatMap((path) => path.dependencies).map((item) => [item.uid, item])).values()]
+    .filter((item) => !item.executiveMilestone && overlapsDateWindow(item, dateWindow))
     .sort((a, b) => bySoonest(a.finishDate, b.finishDate))
     .slice(0, 5);
   const watchlistItems = sortFlaggedFirst([
@@ -1020,15 +1020,15 @@ function ExecutiveSnapshotView({
           </div>
           <div className="exec-watchlist-grid">
             <article className="exec-watch-card">
-              <h3>Next three gates</h3>
+              <h3>Next key enablers</h3>
               <div className="exec-watch-list gates">
-                {upcomingSignificant.slice(0, 3).map((item) => (
+                {keyEnablers.slice(0, 3).map((item) => (
                   <div key={item.uid}>
                     <span className="exec-date-chip">{formatDate(item.finishDate).replace(` ${parseDate(item.finishDate)?.getFullYear() ?? ""}`, "")}</span>
                     <strong>{item.name}</strong>
                   </div>
                 ))}
-                {!upcomingSignificant.length ? <p>No significant non-executive gates found in the selected date window.</p> : null}
+                {!keyEnablers.length ? <p>No executive milestone enablers found in the selected date window.</p> : null}
               </div>
             </article>
             <article className="exec-watch-card">
