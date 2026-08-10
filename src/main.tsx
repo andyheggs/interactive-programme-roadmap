@@ -867,7 +867,7 @@ function ExecutiveSnapshotView({
   const outcomes = paths.map((path) => path.outcome);
   const programmeTone = toneClass(weekly?.overallRag);
   const confidenceTone = recoveryConfidence(weekly, outcomes);
-  const reportingDate = weekly?.weekEnding ?? weekly?.meetingDate ?? schedule.statusDate ?? schedule.importedAt;
+  const reportingDate = new Date().toISOString();
   const programmeStatusText = weekly?.overallRag ? weekly.overallRag.toUpperCase() : "Not set";
   const programmeReason = normaliseText(weekly?.overallRag).includes("red")
     ? "Original July 2026 programme commitment missed"
@@ -907,15 +907,13 @@ function ExecutiveSnapshotView({
   return (
     <>
       <div id="executive-snapshot-export" className="snapshot-export-target">
-        <PageIntro title="Executive View" tracker={tracker}>A high-level delivery roadmap focused on executive outcomes and the immediate dependency pathway behind each one.</PageIntro>
         <section className="executive-roadmap">
           <header className="exec-roadmap-header">
             <div className="exec-brand">
               <span>DAF</span>
             </div>
             <div>
-              <h2>Executive delivery roadmap</h2>
-              <p>{schedule.title}</p>
+              <h2>DAF Executive Delivery Roadmap</h2>
             </div>
             <strong>Reporting date: {formatDate(reportingDate)}</strong>
           </header>
@@ -954,16 +952,6 @@ function ExecutiveSnapshotView({
             <span><i className="legend-dot red" /> Blocked / overdue</span>
             <span><i className="legend-dot grey" /> Not assessed</span>
             <span><i className="legend-dot executive" /> Executive dependency</span>
-          </div>
-
-          <div className="exec-path-toolbar">
-            <label className="field">
-              <span>Show significant dependency pathways for</span>
-              <select value={selectedPath?.outcome.uid ?? ""} onChange={(event) => setSelectedUid(event.target.value)}>
-                {paths.map((path) => <option key={path.outcome.uid} value={path.outcome.uid}>{path.outcome.name}</option>)}
-              </select>
-            </label>
-            {selectedPath ? <span className={`exec-selected-meta ${executiveTone(selectedPath.outcome)}`}>{executiveToneLabels[executiveTone(selectedPath.outcome)]} - Target {formatDate(selectedPath.outcome.finishDate)}</span> : null}
           </div>
 
           <div className="exec-pathways">
