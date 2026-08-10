@@ -600,6 +600,43 @@ function importantExecutiveDependency(item: ProgrammeItem): boolean {
   return executiveDependencyScore(item) > 0;
 }
 
+function executiveEnablerScore(item: ProgrammeItem): number {
+  const text = normaliseText([
+    item.name,
+    item.stream,
+    item.milestoneType,
+    item.dependencyLevel,
+    item.approvalBody,
+    item.targetMilestone,
+  ].filter(Boolean).join(" "));
+  let score = executiveDependencyScore(item);
+  if (item.isMilestone) score += 20;
+  if (item.isCritical) score += 15;
+  if (item.externalDependency) score += 10;
+  [
+    "contract",
+    "supplier",
+    "commercial",
+    "procurement",
+    "signed",
+    "signature",
+    "approval",
+    "approved",
+    "minister",
+    "readiness",
+    "ready",
+    "enablement",
+    "enabled",
+    "implementation",
+    "transition",
+    "registrar employed",
+    "companies registry",
+  ].forEach((keyword) => {
+    if (text.includes(keyword)) score += 35;
+  });
+  return score;
+}
+
 function executiveTone(item?: ProgrammeItem): ExecutiveTone {
   if (!item) return "grey";
   const rag = normaliseText(item.ragStatus);
@@ -634,7 +671,7 @@ function recoveryConfidence(weekly: ReturnType<typeof latestWeeklySummary>, outc
   return "blue";
 }
 
-function collectPredecessorDependencies(outcome: ProgrammeItem, byUid: Map<string, ProgrammeItem>): ProgrammeItem[] {
+function collectPredecessorChain(outcome: ProgrammeItem, byUid: Map<string, ProgrammeItem>): ProgrammeItem[] {
   const found = new Map<string, ProgrammeItem>();
   const seen = new Set<string>();
   const walk = (item: ProgrammeItem, depth: number) => {
@@ -644,12 +681,16 @@ function collectPredecessorDependencies(outcome: ProgrammeItem, byUid: Map<strin
       if (!link.predecessorUid) return;
       const predecessor = byUid.get(link.predecessorUid);
       if (!predecessor) return;
-      if (importantExecutiveDependency(predecessor)) found.set(predecessor.uid, predecessor);
+      found.set(predecessor.uid, predecessor);
       walk(predecessor, depth + 1);
     });
   };
   walk(outcome, 0);
   return [...found.values()];
+}
+
+function collectPredecessorDependencies(outcome: ProgrammeItem, byUid: Map<string, ProgrammeItem>): ProgrammeItem[] {
+  return collectPredecessorChain(outcome, byUid).filter(importantExecutiveDependency);
 }
 
 function executiveDependencyPaths(schedule: ProgrammeSchedule): ExecutivePath[] {
@@ -880,14 +921,15 @@ function ExecutiveSnapshotView({
   const confidenceTone = recoveryConfidence(weekly, outcomes);
   const reportingDate = new Date().toISOString();
   const keyEnablerWindow = { ...dateWindow, start: dateWindow.start ?? parseDate(reportingDate) };
+  const byUid = new Map(schedule.items.map((item) => [item.uid, item]));
   const programmeStatusText = weekly?.overallRag ? weekly.overallRag.toUpperCase() : "Not set";
   const programmeReason = normaliseText(weekly?.overallRag).includes("red")
     ? "Original July 2026 programme commitment missed"
     : weekly?.ragRationale ?? "Import the latest meeting tracker to populate the current programme position.";
   const decisions = sortFlaggedFirst(openDecisions(tracker)).slice(0, 4);
-  const keyEnablers = [...new Map(paths.flatMap((path) => path.dependencies).map((item) => [item.uid, item])).values()]
-    .filter((item) => !item.executiveMilestone && overlapsDateWindow(item, keyEnablerWindow))
-    .sort((a, b) => bySoonest(a.finishDate, b.finishDate))
+  const keyEnablers = [...new Map(paths.flatMap((path) => collectPredecessorChain(path.outcome, byUid)).map((item) => [item.uid, item])).values()]
+    .filter((item) => !item.executiveMilestone && !item.isSummary && item.isActive && overlapsDateWindow(item, keyEnablerWindow) && executiveEnablerScore(item) > 0)
+    .sort((a, b) => bySoonest(a.finishDate, b.finishDate) || executiveEnablerScore(b) - executiveEnablerScore(a))
     .slice(0, 5);
   const watchlistItems = sortFlaggedFirst([
     ...openRisks(tracker)
