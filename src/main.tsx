@@ -878,13 +878,14 @@ function ExecutiveSnapshotView({
   const programmeTone = toneClass(weekly?.overallRag);
   const confidenceTone = recoveryConfidence(weekly, outcomes);
   const reportingDate = new Date().toISOString();
+  const keyEnablerWindow = { ...dateWindow, start: dateWindow.start ?? parseDate(reportingDate) };
   const programmeStatusText = weekly?.overallRag ? weekly.overallRag.toUpperCase() : "Not set";
   const programmeReason = normaliseText(weekly?.overallRag).includes("red")
     ? "Original July 2026 programme commitment missed"
     : weekly?.ragRationale ?? "Import the latest meeting tracker to populate the current programme position.";
   const decisions = sortFlaggedFirst(openDecisions(tracker)).slice(0, 4);
   const keyEnablers = [...new Map(paths.flatMap((path) => path.dependencies).map((item) => [item.uid, item])).values()]
-    .filter((item) => !item.executiveMilestone && overlapsDateWindow(item, dateWindow))
+    .filter((item) => !item.executiveMilestone && overlapsDateWindow(item, keyEnablerWindow))
     .sort((a, b) => bySoonest(a.finishDate, b.finishDate))
     .slice(0, 5);
   const watchlistItems = sortFlaggedFirst([
