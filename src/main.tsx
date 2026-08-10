@@ -873,36 +873,30 @@ function ExecutiveSnapshotView({
     ? "Original July 2026 programme commitment missed"
     : weekly?.ragRationale ?? "Import the latest meeting tracker to populate the current programme position.";
   const decisions = sortFlaggedFirst(openDecisions(tracker)).slice(0, 4);
-  const blockers = sortFlaggedFirst([
-    ...openIssues(tracker)
-      .filter((issue) => issue.dashboardFlag || isRedOrAmber(issue.rag) || isRedOrAmber(issue.priority))
-      .map((issue) => ({
-        id: issue.id,
-        kind: "Issue",
-        title: issue.title,
-        meta: `${issue.stream ?? "No stream"} - ${issue.requiredAction ?? issue.requiredDecision ?? issue.latestUpdate ?? "No action recorded"}`,
-        status: issue.rag ?? issue.priority ?? issue.status,
-        dashboardFlag: issue.dashboardFlag,
-      })),
-    ...openRisks(tracker)
-      .filter((risk) => risk.dashboardFlag || isRedOrAmber(risk.rag))
-      .map((risk) => ({
-        id: risk.id,
-        kind: "Risk",
-        title: risk.title,
-        meta: `${risk.stream ?? "No stream"} - ${risk.mitigation ?? risk.latestUpdate ?? "No mitigation recorded"}`,
-        status: risk.rag ?? risk.status,
-        dashboardFlag: risk.dashboardFlag,
-      })),
-  ]).slice(0, 5);
   const upcomingSignificant = periodMilestones(schedule, dateWindow)
     .filter((item) => significantDependency(item) && !item.executiveMilestone)
     .sort((a, b) => bySoonest(a.finishDate, b.finishDate))
     .slice(0, 5);
-  const selectedRelatedRisks = relatedTrackerItems(openRisks(tracker), selectedPath?.outcome);
-  const selectedRelatedIssues = relatedTrackerItems(openIssues(tracker), selectedPath?.outcome);
-  const selectedRelatedDecisions = relatedTrackerItems(openDecisions(tracker), selectedPath?.outcome);
-  const selectedDependencies = selectedPath?.dependencies ?? [];
+  const watchlistItems = sortFlaggedFirst([
+    ...openRisks(tracker)
+      .filter((risk) => risk.dashboardFlag || isRedOrAmber(risk.rag))
+      .map((risk) => ({ id: `risk-${risk.id}`, title: risk.title, meta: risk.rag ?? risk.status ?? "Risk", dashboardFlag: risk.dashboardFlag })),
+    ...openIssues(tracker)
+      .filter((issue) => issue.dashboardFlag || isRedOrAmber(issue.rag) || isRedOrAmber(issue.priority))
+      .map((issue) => ({ id: `issue-${issue.id}`, title: issue.title, meta: issue.rag ?? issue.priority ?? issue.status ?? "Issue", dashboardFlag: issue.dashboardFlag })),
+  ]).slice(0, 3);
+  const attentionItems = [
+    weekly?.askSteerNeeded ? { id: "ask", title: weekly.askSteerNeeded, meta: "Current ask" } : undefined,
+    weekly?.mainBlocker ? { id: "blocker", title: weekly.mainBlocker, meta: "Main blocker" } : undefined,
+    ...decisions.map((decision) => ({
+      id: `decision-${decision.id}`,
+      title: decision.title,
+      meta: decision.decisionMaker ?? decision.owner ?? decision.status ?? "Decision",
+    })),
+  ]
+    .filter((item): item is { id: string; title: string; meta: string } => Boolean(item?.title))
+    .filter((item, index, items) => items.findIndex((candidate) => candidate.title === item.title) === index)
+    .slice(0, 3);
 
   return (
     <>
@@ -927,6 +921,10 @@ function ExecutiveSnapshotView({
             </div>
           </div>
 
+          <div className="exec-section-label">
+            <h3>Executive milestones</h3>
+            <p>Highest-level delivery outcomes and confidence in the revised dates.</p>
+          </div>
           <div className="exec-outcome-cards" aria-label="Executive milestones">
             {outcomes.map((item) => {
               const tone = executiveTone(item);
@@ -954,6 +952,10 @@ function ExecutiveSnapshotView({
             <span><i className="legend-dot executive" /> Executive dependency</span>
           </div>
 
+          <div className="exec-section-label">
+            <h3>Executive dependency roadmap</h3>
+            <p>Significant schedule dependencies behind each executive milestone.</p>
+          </div>
           <div className="exec-pathways">
             {paths.length ? paths.map((path) => (
               <article className={`exec-path ${path.outcome.uid === selectedPath?.outcome.uid ? "selected" : ""}`} key={path.outcome.uid}>
@@ -993,78 +995,48 @@ function ExecutiveSnapshotView({
             )}
           </div>
 
-          <div className="exec-detail-grid">
-            <article className="exec-detail-panel primary">
-              <h3>Selected Outcome</h3>
-              {selectedPath ? (
-                <>
-                  <strong>{selectedPath.outcome.name}</strong>
-                  <dl>
-                    <div><dt>Target date</dt><dd>{formatDate(selectedPath.outcome.finishDate)}</dd></div>
-                    <div><dt>Stream</dt><dd>{selectedPath.outcome.stream ?? "Not set"}</dd></div>
-                    <div><dt>RAG</dt><dd>{selectedPath.outcome.ragStatus ?? executiveToneLabels[executiveTone(selectedPath.outcome)]}</dd></div>
-                    <div><dt>Date confidence</dt><dd>{selectedPath.outcome.dateConfidence ?? "Not set"}</dd></div>
-                    <div><dt>Baseline finish</dt><dd>{formatDate(selectedPath.outcome.baselineFinish)}</dd></div>
-                    <div><dt>Baseline delay</dt><dd>{selectedPath.outcome.delayDays ? `${selectedPath.outcome.delayDays} calendar days` : "No delay recorded"}</dd></div>
-                    <div><dt>Owner</dt><dd>{selectedPath.outcome.workstreamAccountableOwner ?? selectedPath.outcome.resourceNames?.join(", ") ?? "Not set"}</dd></div>
-                  </dl>
-                </>
-              ) : <p>No selected outcome.</p>}
-            </article>
-            <article className="exec-detail-panel">
-              <h3>Immediate Dependencies</h3>
-              <div className="exec-mini-list">
-                {selectedDependencies.length ? selectedDependencies.map((item) => (
-                  <div key={item.uid}>
-                    <span>{formatDate(item.finishDate)}</span>
-                    <strong>{item.name}</strong>
-                    <em className={executiveTone(item)}>{executiveToneLabels[executiveTone(item)]}</em>
-                  </div>
-                )) : <p>No dependency anchors or governance gates are tagged for this outcome yet.</p>}
-              </div>
-            </article>
-            <article className="exec-detail-panel">
-              <h3>Steer / Decisions</h3>
-              <div className="exec-mini-list">
-                {(selectedRelatedDecisions.length ? selectedRelatedDecisions : decisions).slice(0, 4).map((decision) => (
-                  <div key={decision.id}>
-                    <span>{formatDateOrText(decision.decisionRequiredByLabel ?? decision.decisionRequiredBy)}</span>
-                    <strong>{decision.title}</strong>
-                    <em>{decision.status ?? "Open"}</em>
-                  </div>
-                ))}
-                {!decisions.length && !selectedRelatedDecisions.length ? <p>No open decisions are currently flagged.</p> : null}
-              </div>
-            </article>
-            <article className="exec-detail-panel">
-              <h3>Risks / Issues</h3>
-              <div className="exec-mini-list">
-                {[...selectedRelatedIssues, ...selectedRelatedRisks, ...blockers].slice(0, 4).map((item) => (
-                  <div key={`${"kind" in item ? item.kind : "risk"}-${item.id}`}>
-                    <span>{"kind" in item ? item.kind : item.stream ?? "Risk"}</span>
-                    <strong>{item.title}</strong>
-                    <em>{("rag" in item && item.rag) || ("priority" in item && item.priority) || item.status || "Open"}</em>
-                  </div>
-                ))}
-                {!blockers.length && !selectedRelatedIssues.length && !selectedRelatedRisks.length ? <p>No high priority risks or issues are currently flagged.</p> : null}
-              </div>
-            </article>
+          <div className="exec-section-label">
+            <h3>Programme watchlist</h3>
+            <p>Programme-level items from the schedule and meeting tracker that need attention now.</p>
           </div>
-
-          <div className="exec-bottom-grid">
-            <article>
-              <h3>Current Ask</h3>
-              <p>{weekly?.askSteerNeeded ?? "No current ask is recorded in the imported tracker."}</p>
+          <div className="exec-watchlist-grid">
+            <article className="exec-watch-card">
+              <h3>Next three gates</h3>
+              <div className="exec-watch-list gates">
+                {upcomingSignificant.slice(0, 3).map((item) => (
+                  <div key={item.uid}>
+                    <span className="exec-date-chip">{formatDate(item.finishDate).replace(` ${parseDate(item.finishDate)?.getFullYear() ?? ""}`, "")}</span>
+                    <strong>{item.name}</strong>
+                  </div>
+                ))}
+                {!upcomingSignificant.length ? <p>No significant non-executive gates found in the selected date window.</p> : null}
+              </div>
             </article>
-            <article>
-              <h3>Main Blocker</h3>
-              <p>{weekly?.mainBlocker ?? blockers[0]?.title ?? "No blocker is recorded in the imported tracker."}</p>
+            <article className="exec-watch-card">
+              <h3>Top risks / issues</h3>
+              <div className="exec-watch-list">
+                {watchlistItems.map((item) => (
+                  <div key={item.id}>
+                    <span className="exec-alert-dot amber" />
+                    <strong>{item.title}</strong>
+                    <em>{item.meta}</em>
+                  </div>
+                ))}
+                {!watchlistItems.length ? <p>No dashboard or red/amber risks or issues are currently flagged.</p> : null}
+              </div>
             </article>
-            <article>
-              <h3>Upcoming Gates</h3>
-              {upcomingSignificant.length ? upcomingSignificant.map((item) => (
-                <p key={item.uid}><strong>{formatDate(item.finishDate)}</strong> {item.name}</p>
-              )) : <p>No significant non-executive gates found in the selected date window.</p>}
+            <article className="exec-watch-card">
+              <h3>Executive attention</h3>
+              <div className="exec-watch-list">
+                {attentionItems.map((item) => (
+                  <div key={item.id}>
+                    <span className="exec-alert-dot red" />
+                    <strong>{item.title}</strong>
+                    <em>{item.meta}</em>
+                  </div>
+                ))}
+                {!attentionItems.length ? <p>No current asks, blockers or open decisions are currently flagged.</p> : null}
+              </div>
             </article>
           </div>
         </section>
