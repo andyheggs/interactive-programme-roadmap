@@ -585,11 +585,23 @@ function executiveTone(item?: ProgrammeItem): ExecutiveTone {
   if (!item) return "grey";
   const rag = normaliseText(item.ragStatus);
   const confidence = normaliseText(item.dateConfidence);
-  if (rag.includes("red") || item.status === "late" || item.status === "blocked") return "red";
-  if (rag.includes("amber") || confidence.includes("low") || confidence.includes("tbc") || confidence.includes("unconfirmed") || item.externalDependency) {
+  if (rag.includes("red")) return "red";
+  if (rag.includes("amber")) return "amber";
+  if (rag.includes("green")) return "green";
+  if (item.status === "blocked") return "red";
+  if (item.status === "complete") return "green";
+  if (confidence.includes("high") || confidence.includes("confirmed") || confidence.includes("credible")) return "green";
+  if (
+    confidence.includes("medium") ||
+    confidence.includes("low") ||
+    confidence.includes("tbc") ||
+    confidence.includes("unconfirmed") ||
+    confidence.includes("assumption") ||
+    item.externalDependency ||
+    item.decisionRequired
+  ) {
     return "amber";
   }
-  if (rag.includes("green") || item.status === "complete") return "green";
   if (item.finishDate) return "blue";
   return "grey";
 }
@@ -1004,6 +1016,8 @@ function ExecutiveSnapshotView({
                     <div><dt>Stream</dt><dd>{selectedPath.outcome.stream ?? "Not set"}</dd></div>
                     <div><dt>RAG</dt><dd>{selectedPath.outcome.ragStatus ?? executiveToneLabels[executiveTone(selectedPath.outcome)]}</dd></div>
                     <div><dt>Date confidence</dt><dd>{selectedPath.outcome.dateConfidence ?? "Not set"}</dd></div>
+                    <div><dt>Baseline finish</dt><dd>{formatDate(selectedPath.outcome.baselineFinish)}</dd></div>
+                    <div><dt>Baseline delay</dt><dd>{selectedPath.outcome.delayDays ? `${selectedPath.outcome.delayDays} calendar days` : "No delay recorded"}</dd></div>
                     <div><dt>Owner</dt><dd>{selectedPath.outcome.workstreamAccountableOwner ?? selectedPath.outcome.resourceNames?.join(", ") ?? "Not set"}</dd></div>
                   </dl>
                 </>
