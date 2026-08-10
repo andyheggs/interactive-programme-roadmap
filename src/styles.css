@@ -814,6 +814,31 @@ body.snapshot-exporting * {
 .exec-position-strip div strong {
   font-size: 1rem;
 }
+.exec-view-tabs {
+  display: inline-flex;
+  width: fit-content;
+  gap: 6px;
+  padding: 6px;
+  border: 1px solid #3b4452;
+  border-radius: 8px;
+  background: #171c24;
+}
+.exec-view-tabs button {
+  min-height: 40px;
+  padding: 8px 14px;
+  border: 1px solid transparent;
+  border-radius: 7px;
+  color: var(--exec-muted);
+  background: transparent;
+  font-weight: 900;
+  cursor: pointer;
+}
+.exec-view-tabs button.active,
+.exec-view-tabs button:hover {
+  color: var(--exec-text);
+  border-color: #4d5a6c;
+  background: var(--exec-panel-soft);
+}
 .exec-section-label {
   display: flex;
   align-items: end;
@@ -902,6 +927,42 @@ body.snapshot-exporting * {
 .exec-outcome-summary.amber { --tone: #ffd166; --badge-bg: rgba(255, 138, 0, 0.22); --badge-text: #ffd166; }
 .exec-outcome-summary.red { --tone: #ff8b92; --badge-bg: rgba(196, 59, 69, 0.26); --badge-text: #ffb0b5; }
 .exec-outcome-summary.grey { --tone: #9aa1aa; --badge-bg: rgba(116, 124, 132, 0.26); --badge-text: #cbd1d8; }
+.exec-delivered-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+  gap: 12px;
+}
+.exec-delivered-card {
+  display: grid;
+  gap: 12px;
+  min-height: 150px;
+  padding: 18px;
+  border: 1px solid #343d49;
+  border-top: 6px solid var(--tone, var(--exec-green));
+  border-radius: 8px;
+  background: var(--exec-panel);
+}
+.exec-delivered-card.green { --tone: #87d695; }
+.exec-delivered-card.blue { --tone: #87bdf5; }
+.exec-delivered-card.amber { --tone: #ffd166; }
+.exec-delivered-card.red { --tone: #ff8b92; }
+.exec-delivered-card.grey { --tone: #9aa1aa; }
+.exec-delivered-card span {
+  color: var(--exec-muted);
+  font-weight: 900;
+}
+.exec-delivered-card strong {
+  color: var(--exec-text);
+  font-size: 1rem;
+  line-height: 1.35;
+}
+.exec-delivered-card em {
+  align-self: end;
+  color: var(--exec-muted);
+  font-size: 0.8rem;
+  font-style: normal;
+  font-weight: 800;
+}
 .exec-legend {
   display: flex;
   flex-wrap: wrap;

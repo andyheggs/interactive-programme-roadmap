@@ -600,6 +600,33 @@ function importantExecutiveDependency(item: ProgrammeItem): boolean {
   return executiveDependencyScore(item) > 0;
 }
 
+function isDeliveredItem(item: ProgrammeItem): boolean {
+  return item.status === "complete" || item.percentComplete === 100;
+}
+
+function isHighLevelMilestone(item: ProgrammeItem): boolean {
+  const level = normaliseText(item.milestoneLevel);
+  return Boolean(
+    item.executiveMilestone ||
+      item.boardReportable ||
+      item.roadmapMilestone ||
+      level.includes("executive") ||
+      level.includes("board"),
+  );
+}
+
+function isHistoricDeliveredItem(item: ProgrammeItem, window: DateWindow): boolean {
+  const finishDate = parseDate(item.finishDate);
+  return Boolean(isDeliveredItem(item) && finishDate && window.start && finishDate < window.start);
+}
+
+function isForwardLookingExecutiveItem(item: ProgrammeItem, window: DateWindow): boolean {
+  if (isHistoricDeliveredItem(item, window)) return false;
+  const finishDate = parseDate(item.finishDate);
+  if (window.end && finishDate && finishDate > window.end) return false;
+  return true;
+}
+
 function executiveEnablerScore(item: ProgrammeItem): number {
   const text = normaliseText([
     item.name,
@@ -912,15 +939,31 @@ function ExecutiveSnapshotView({
   dateWindow: DateWindow;
   onExportSnapshotPdf?: () => void;
 }) {
-  const paths = executiveDependencyPaths(schedule);
   const weekly = latestWeeklySummary(tracker);
+  const reportingDate = new Date().toISOString();
+  const forwardWindow = { ...dateWindow, start: dateWindow.start ?? parseDate(reportingDate) };
+  const paths = executiveDependencyPaths(schedule)
+    .filter((path) => isForwardLookingExecutiveItem(path.outcome, forwardWindow))
+    .map((path) => ({
+      ...path,
+      dependencies: path.dependencies.filter((item) => isForwardLookingExecutiveItem(item, forwardWindow)),
+    }));
+  const deliveredMilestones = programmeMilestones(schedule)
+    .filter((item) => isHighLevelMilestone(item) && isHistoricDeliveredItem(item, forwardWindow))
+    .sort((a, b) => (parseDate(b.finishDate)?.getTime() ?? 0) - (parseDate(a.finishDate)?.getTime() ?? 0));
+  const [executiveMode, setExecutiveMode] = useState<"upcoming" | "delivered">("upcoming");
   const [selectedUid, setSelectedUid] = useState(paths[0]?.outcome.uid ?? "");
+  useEffect(() => {
+    if (!paths.length) {
+      if (selectedUid) setSelectedUid("");
+      return;
+    }
+    if (!paths.some((path) => path.outcome.uid === selectedUid)) setSelectedUid(paths[0].outcome.uid);
+  }, [paths, selectedUid]);
   const selectedPath = paths.find((path) => path.outcome.uid === selectedUid) ?? paths[0];
   const outcomes = paths.map((path) => path.outcome);
   const programmeTone = toneClass(weekly?.overallRag);
   const confidenceTone = recoveryConfidence(weekly, outcomes);
-  const reportingDate = new Date().toISOString();
-  const keyEnablerWindow = { ...dateWindow, start: dateWindow.start ?? parseDate(reportingDate) };
   const byUid = new Map(schedule.items.map((item) => [item.uid, item]));
   const programmeStatusText = weekly?.overallRag ? weekly.overallRag.toUpperCase() : "Not set";
   const programmeReason = normaliseText(weekly?.overallRag).includes("red")
@@ -928,7 +971,7 @@ function ExecutiveSnapshotView({
     : weekly?.ragRationale ?? "Import the latest meeting tracker to populate the current programme position.";
   const decisions = sortFlaggedFirst(openDecisions(tracker)).slice(0, 4);
   const keyEnablers = [...new Map(paths.flatMap((path) => collectPredecessorChain(path.outcome, byUid)).map((item) => [item.uid, item])).values()]
-    .filter((item) => !item.executiveMilestone && !item.isSummary && item.isActive && overlapsDateWindow(item, keyEnablerWindow) && executiveEnablerScore(item) > 0)
+    .filter((item) => !item.executiveMilestone && !item.isSummary && item.isActive && isForwardLookingExecutiveItem(item, forwardWindow) && executiveEnablerScore(item) > 0)
     .sort((a, b) => bySoonest(a.finishDate, b.finishDate) || executiveEnablerScore(b) - executiveEnablerScore(a))
     .slice(0, 5);
   const watchlistItems = sortFlaggedFirst([
@@ -975,6 +1018,29 @@ function ExecutiveSnapshotView({
             </div>
           </div>
 
+          <div className="exec-view-tabs" role="tablist" aria-label="Executive roadmap view">
+            <button
+              className={executiveMode === "upcoming" ? "active" : ""}
+              type="button"
+              role="tab"
+              aria-selected={executiveMode === "upcoming"}
+              onClick={() => setExecutiveMode("upcoming")}
+            >
+              Upcoming roadmap
+            </button>
+            <button
+              className={executiveMode === "delivered" ? "active" : ""}
+              type="button"
+              role="tab"
+              aria-selected={executiveMode === "delivered"}
+              onClick={() => setExecutiveMode("delivered")}
+            >
+              Delivered milestones
+            </button>
+          </div>
+
+          {executiveMode === "upcoming" ? (
+            <>
           <div className="exec-section-label">
             <h3>Executive milestones</h3>
             <p>Highest-level delivery outcomes and confidence in the revised dates.</p>
@@ -1093,6 +1159,32 @@ function ExecutiveSnapshotView({
               </div>
             </article>
           </div>
+            </>
+          ) : (
+            <>
+              <div className="exec-section-label">
+                <h3>Delivered milestones</h3>
+                <p>Completed high-level programme milestones before {formatDate(forwardWindow.start?.toISOString())}.</p>
+              </div>
+              <div className="exec-delivered-grid">
+                {deliveredMilestones.length ? deliveredMilestones.map((item) => {
+                  const tone = executiveTone(item);
+                  return (
+                    <article className={`exec-delivered-card ${tone}`} key={item.uid}>
+                      <span>{formatDate(item.finishDate)}</span>
+                      <strong>{item.name}</strong>
+                      <em>{item.stream ?? item.milestoneLevel ?? item.roadmapView ?? "High-level milestone"}</em>
+                    </article>
+                  );
+                }) : (
+                  <article className="exec-empty-state">
+                    <h3>No delivered milestones found</h3>
+                    <p>Completed high-level milestones will appear here once they are marked complete in the imported Project plan.</p>
+                  </article>
+                )}
+              </div>
+            </>
+          )}
         </section>
       </div>
       {onExportSnapshotPdf ? (
