@@ -81,7 +81,7 @@ type AppPage =
 const appPages: Array<{ key: AppPage; label: string; group: "core" | "reporting" | "future" }> = [
   { key: "workspace", label: "Roadmap Workspace", group: "core" },
   { key: "home", label: "Home Dashboard", group: "reporting" },
-  { key: "ceo", label: "Executive Snapshot", group: "reporting" },
+  { key: "ceo", label: "Executive View", group: "reporting" },
   { key: "board", label: "Board Report", group: "reporting" },
   { key: "reporting-roadmap", label: "Reporting Roadmap", group: "reporting" },
   { key: "risks", label: "Risks & Issues", group: "reporting" },
@@ -538,6 +538,122 @@ function lateMilestones(schedule: ProgrammeSchedule): ProgrammeItem[] {
     .sort((a, b) => (b.delayDays ?? 0) - (a.delayDays ?? 0));
 }
 
+type ExecutiveTone = "green" | "blue" | "amber" | "red" | "grey";
+
+type ExecutivePath = {
+  outcome: ProgrammeItem;
+  dependencies: ProgrammeItem[];
+};
+
+const executiveToneLabels: Record<ExecutiveTone, string> = {
+  green: "GREEN",
+  blue: "PLANNED",
+  amber: "AMBER",
+  red: "RED",
+  grey: "NOT ASSESSED",
+};
+
+function normaliseText(value?: string): string {
+  return (value ?? "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+}
+
+function executiveMilestoneItems(schedule: ProgrammeSchedule): ProgrammeItem[] {
+  const executive = schedule.items
+    .filter((item) => item.executiveMilestone || normaliseText(item.milestoneLevel).includes("executive"))
+    .sort((a, b) => bySoonest(a.finishDate, b.finishDate));
+  if (executive.length) return executive;
+  return programmeMilestones(schedule).filter((item) => itemImportance(item) >= 4).slice(0, 5);
+}
+
+function significantDependency(item: ProgrammeItem): boolean {
+  const level = `${item.milestoneLevel ?? ""} ${item.dependencyLevel ?? ""}`.toLowerCase();
+  return Boolean(
+    item.executiveMilestone ||
+      item.dependencyAnchor ||
+      item.governanceGate ||
+      item.roadmapMilestone ||
+      item.boardReportable ||
+      item.decisionRequired ||
+      item.externalDependency ||
+      level.includes("executive") ||
+      level.includes("board") ||
+      level.includes("gate"),
+  );
+}
+
+function executiveTone(item?: ProgrammeItem): ExecutiveTone {
+  if (!item) return "grey";
+  const rag = normaliseText(item.ragStatus);
+  const confidence = normaliseText(item.dateConfidence);
+  if (rag.includes("red") || item.status === "late" || item.status === "blocked") return "red";
+  if (rag.includes("amber") || confidence.includes("low") || confidence.includes("tbc") || confidence.includes("unconfirmed") || item.externalDependency) {
+    return "amber";
+  }
+  if (rag.includes("green") || item.status === "complete") return "green";
+  if (item.finishDate) return "blue";
+  return "grey";
+}
+
+function recoveryConfidence(weekly: ReturnType<typeof latestWeeklySummary>, outcomes: ProgrammeItem[]): ExecutiveTone {
+  const goLive = normaliseText(weekly?.goLiveConfidence);
+  const tones = outcomes.map(executiveTone);
+  if (goLive.includes("high") || goLive.includes("green")) return "green";
+  if (goLive.includes("low") || tones.includes("amber") || normaliseText(weekly?.overallRag).includes("red")) return "amber";
+  if (tones.includes("red")) return "red";
+  return "blue";
+}
+
+function taskMatchesOutcome(item: ProgrammeItem, outcome: ProgrammeItem): boolean {
+  const itemTarget = normaliseText(item.targetMilestone);
+  const outcomeTarget = normaliseText(outcome.targetMilestone);
+  if (itemTarget && outcomeTarget && itemTarget === outcomeTarget) return true;
+  if (itemTarget && (normaliseText(outcome.name).includes(itemTarget) || itemTarget.includes(normaliseText(outcome.name)))) return true;
+  return false;
+}
+
+function collectPredecessorDependencies(outcome: ProgrammeItem, byUid: Map<string, ProgrammeItem>): ProgrammeItem[] {
+  const found = new Map<string, ProgrammeItem>();
+  const seen = new Set<string>();
+  const walk = (item: ProgrammeItem, depth: number) => {
+    if (depth > 8 || seen.has(item.uid)) return;
+    seen.add(item.uid);
+    item.predecessors.forEach((link) => {
+      if (!link.predecessorUid) return;
+      const predecessor = byUid.get(link.predecessorUid);
+      if (!predecessor) return;
+      if (significantDependency(predecessor)) found.set(predecessor.uid, predecessor);
+      walk(predecessor, depth + 1);
+    });
+  };
+  walk(outcome, 0);
+  return [...found.values()];
+}
+
+function executiveDependencyPaths(schedule: ProgrammeSchedule): ExecutivePath[] {
+  const outcomes = executiveMilestoneItems(schedule).slice(0, 7);
+  const byUid = new Map(schedule.items.map((item) => [item.uid, item]));
+  return outcomes.map((outcome) => {
+    const sameTarget = schedule.items.filter((item) => item.uid !== outcome.uid && taskMatchesOutcome(item, outcome) && significantDependency(item));
+    const predecessors = collectPredecessorDependencies(outcome, byUid);
+    const combined = new Map<string, ProgrammeItem>();
+    [...sameTarget, ...predecessors].forEach((item) => combined.set(item.uid, item));
+    const dependencies = [...combined.values()]
+      .sort((a, b) => bySoonest(a.finishDate, b.finishDate) || itemImportance(b) - itemImportance(a))
+      .slice(0, 5);
+    return { outcome, dependencies };
+  });
+}
+
+function relatedTrackerItems<T extends { stream?: string; title: string; dashboardFlag?: boolean }>(items: T[], item?: ProgrammeItem): T[] {
+  const stream = normaliseText(item?.stream);
+  const target = normaliseText(item?.targetMilestone ?? item?.name);
+  return sortFlaggedFirst(items.filter((entry) => {
+    const entryStream = normaliseText(entry.stream);
+    const entryText = normaliseText(entry.title);
+    return Boolean((stream && entryStream === stream) || (target && entryText.includes(target.split(" ").slice(0, 3).join(" "))));
+  })).slice(0, 4);
+}
+
 function openRisks(tracker?: TrackerData): TrackerRisk[] {
   return tracker?.risks.filter((risk) => isOpenStatus(risk.status)) ?? [];
 }
@@ -732,11 +848,19 @@ function ExecutiveSnapshotView({
   dateWindow: DateWindow;
   onExportSnapshotPdf?: () => void;
 }) {
+  const paths = executiveDependencyPaths(schedule);
   const weekly = latestWeeklySummary(tracker);
-  const decisions = openDecisions(tracker)
-    .slice()
-    .sort((a, b) => Number(Boolean(b.dashboardFlag)) - Number(Boolean(a.dashboardFlag)) || bySoonest(a.decisionDate ?? a.decisionRequiredBy, b.decisionDate ?? b.decisionRequiredBy))
-    .slice(0, 4);
+  const [selectedUid, setSelectedUid] = useState(paths[0]?.outcome.uid ?? "");
+  const selectedPath = paths.find((path) => path.outcome.uid === selectedUid) ?? paths[0];
+  const outcomes = paths.map((path) => path.outcome);
+  const programmeTone = toneClass(weekly?.overallRag);
+  const confidenceTone = recoveryConfidence(weekly, outcomes);
+  const reportingDate = weekly?.weekEnding ?? weekly?.meetingDate ?? schedule.statusDate ?? schedule.importedAt;
+  const programmeStatusText = weekly?.overallRag ? weekly.overallRag.toUpperCase() : "Not set";
+  const programmeReason = normaliseText(weekly?.overallRag).includes("red")
+    ? "Original July 2026 programme commitment missed"
+    : weekly?.ragRationale ?? "Import the latest meeting tracker to populate the current programme position.";
+  const decisions = sortFlaggedFirst(openDecisions(tracker)).slice(0, 4);
   const blockers = sortFlaggedFirst([
     ...openIssues(tracker)
       .filter((issue) => issue.dashboardFlag || isRedOrAmber(issue.rag) || isRedOrAmber(issue.priority))
@@ -759,122 +883,186 @@ function ExecutiveSnapshotView({
         dashboardFlag: risk.dashboardFlag,
       })),
   ]).slice(0, 5);
-  const actions = openActions(tracker)
-    .filter((action) => action.dashboardFlag || isRedOrAmber(action.priority))
-    .sort((a, b) => Number(Boolean(b.dashboardFlag)) - Number(Boolean(a.dashboardFlag)) || bySoonest(a.dueDate, b.dueDate))
-    .slice(0, 5);
-  const milestones = periodMilestones(schedule, dateWindow)
-    .filter((item) => item.roadmapMilestone || item.executiveMilestone || item.boardReportable || item.governanceGate || itemImportance(item) >= 3)
+  const upcomingSignificant = periodMilestones(schedule, dateWindow)
+    .filter((item) => significantDependency(item) && !item.executiveMilestone)
     .sort((a, b) => bySoonest(a.finishDate, b.finishDate))
     .slice(0, 5);
-  const narrative = splitDigest(weekly?.ragRationale ?? weekly?.openingLine ?? weekly?.keyRisksOrIssues, 3);
-  const latestMeeting = formatDate(weekly?.meetingDate ?? weekly?.weekEnding);
-  const ragTone = toneClass(weekly?.overallRag);
+  const selectedRelatedRisks = relatedTrackerItems(openRisks(tracker), selectedPath?.outcome);
+  const selectedRelatedIssues = relatedTrackerItems(openIssues(tracker), selectedPath?.outcome);
+  const selectedRelatedDecisions = relatedTrackerItems(openDecisions(tracker), selectedPath?.outcome);
+  const selectedDependencies = selectedPath?.dependencies ?? [];
 
   return (
     <>
       <div id="executive-snapshot-export" className="snapshot-export-target">
-        <PageIntro title="Executive Snapshot" tracker={tracker}>A clean meeting view for the current programme position, the steer needed, and the items most likely to affect go-live.</PageIntro>
-        <section className={`executive-snapshot rag-${ragTone}`}>
-          <div className="snapshot-hero">
+        <PageIntro title="Executive View" tracker={tracker}>A high-level delivery roadmap focused on executive outcomes and the immediate dependency pathway behind each one.</PageIntro>
+        <section className="executive-roadmap">
+          <header className="exec-roadmap-header">
+            <div className="exec-brand">
+              <span>DAF</span>
+            </div>
             <div>
-              <span className="snapshot-eyebrow"><Target size={15} /> Programme position</span>
-              <h2>{schedule.title}</h2>
-              <p>{weekly?.openingLine ?? "Import the latest meeting tracker to populate the current executive narrative."}</p>
+              <h2>Executive delivery roadmap</h2>
+              <p>{schedule.title}</p>
             </div>
-            <div className="snapshot-rag">
-              <span>Overall RAG</span>
-              <strong>{weekly?.overallRag ?? "Not set"}</strong>
-              <small>{weekly?.ragMovement ? `Movement: ${weekly.ragMovement}` : "Movement not set"}</small>
+            <strong>Reporting date: {formatDate(reportingDate)}</strong>
+          </header>
+
+          <div className="exec-position-strip">
+            <span className={`exec-status-badge ${programmeTone}`}>{programmeStatusText}</span>
+            <p>{programmeReason}</p>
+            <div>
+              <span>Recovery confidence</span>
+              <strong className={`exec-text-${confidenceTone}`}>{executiveToneLabels[confidenceTone]}</strong>
             </div>
           </div>
 
-          <div className="snapshot-kpis">
-            <article className={`snapshot-kpi tone-${ragTone}`}>
-              <AlertTriangle size={18} />
-              <span>Go-live confidence</span>
-              <strong>{weekly?.goLiveConfidence ?? "Not set"}</strong>
-            </article>
-            <article className="snapshot-kpi tone-blue">
-              <Clock size={18} />
-              <span>Programme finish</span>
-              <strong>{formatDate(schedule.finishDate)}</strong>
-            </article>
-            <article className="snapshot-kpi tone-amber">
-              <ArrowRight size={18} />
-              <span>Steer required</span>
-              <strong>{weekly?.steerRequired ?? (decisions.length ? "Yes" : "Not set")}</strong>
-            </article>
-            <article className="snapshot-kpi tone-green">
-              <CheckCircle2 size={18} />
-              <span>Latest meeting</span>
-              <strong>{latestMeeting}</strong>
-            </article>
+          <div className="exec-outcome-cards" aria-label="Executive milestones">
+            {outcomes.map((item) => {
+              const tone = executiveTone(item);
+              return (
+                <button
+                  className={`exec-outcome-summary ${tone} ${selectedPath?.outcome.uid === item.uid ? "selected" : ""}`}
+                  type="button"
+                  key={item.uid}
+                  onClick={() => setSelectedUid(item.uid)}
+                >
+                  <span>{formatDate(item.finishDate)}</span>
+                  <strong>{item.name}</strong>
+                  <em>{executiveToneLabels[tone]}</em>
+                </button>
+              );
+            })}
           </div>
 
-          <div className="snapshot-focus-grid">
-            <article className="snapshot-panel snapshot-ask">
-              <span>Ask / Steer Needed</span>
-              <strong>{weekly?.askSteerNeeded ?? decisions[0]?.title ?? "None currently flagged."}</strong>
-            </article>
-            <article className="snapshot-panel snapshot-blocker">
-              <span>Main Blocker</span>
-              <strong>{weekly?.mainBlocker ?? blockers[0]?.title ?? "None currently flagged."}</strong>
-            </article>
+          <div className="exec-legend" aria-label="Roadmap legend">
+            <span><i className="legend-dot green" /> Complete / green</span>
+            <span><i className="legend-dot blue" /> Planned / on track</span>
+            <span><i className="legend-dot amber" /> At risk / unconfirmed</span>
+            <span><i className="legend-dot red" /> Blocked / overdue</span>
+            <span><i className="legend-dot grey" /> Not assessed</span>
+            <span><i className="legend-dot executive" /> Executive dependency</span>
           </div>
 
-          <div className="snapshot-section-grid">
-            <article className="snapshot-section">
-              <h3>Key Narrative</h3>
-              {narrative.length ? narrative.map((item) => <p key={item}>{item}</p>) : <p className="snapshot-empty">No weekly narrative has been imported yet.</p>}
+          <div className="exec-path-toolbar">
+            <label className="field">
+              <span>Show significant dependency pathways for</span>
+              <select value={selectedPath?.outcome.uid ?? ""} onChange={(event) => setSelectedUid(event.target.value)}>
+                {paths.map((path) => <option key={path.outcome.uid} value={path.outcome.uid}>{path.outcome.name}</option>)}
+              </select>
+            </label>
+            {selectedPath ? <span className={`exec-selected-meta ${executiveTone(selectedPath.outcome)}`}>{executiveToneLabels[executiveTone(selectedPath.outcome)]} - Target {formatDate(selectedPath.outcome.finishDate)}</span> : null}
+          </div>
+
+          <div className="exec-pathways">
+            {paths.length ? paths.map((path) => (
+              <article className={`exec-path ${path.outcome.uid === selectedPath?.outcome.uid ? "selected" : ""}`} key={path.outcome.uid}>
+                <h3>{path.outcome.targetMilestone || path.outcome.name}</h3>
+                <div className="exec-path-grid">
+                  <div className="exec-sequence" aria-label={`${path.outcome.name} dependency pathway`}>
+                    {path.dependencies.length ? path.dependencies.map((item) => {
+                      const tone = executiveTone(item);
+                      return (
+                        <div className="exec-node" key={item.uid}>
+                          <span>{formatDate(item.finishDate)}</span>
+                          <i className={`${tone} ${item.executiveMilestone ? "executive" : ""}`} />
+                          <strong>{item.name}</strong>
+                        </div>
+                      );
+                    }) : (
+                      <div className="exec-node empty">
+                        <span>Not tagged</span>
+                        <i className="grey" />
+                        <strong>No significant dependencies tagged in the plan yet</strong>
+                      </div>
+                    )}
+                    <ChevronRight className="exec-path-arrow" size={26} />
+                  </div>
+                  <button className={`exec-outcome-detail ${executiveTone(path.outcome)}`} type="button" onClick={() => setSelectedUid(path.outcome.uid)}>
+                    <span>{executiveToneLabels[executiveTone(path.outcome)]}</span>
+                    <strong>{path.outcome.name}</strong>
+                    <em>{formatDate(path.outcome.finishDate)}</em>
+                  </button>
+                </div>
+              </article>
+            )) : (
+              <article className="exec-empty-state">
+                <h3>No executive milestones found</h3>
+                <p>Flag the high-level outcomes in Microsoft Project using the Executive Milestones field, then re-import the XML.</p>
+              </article>
+            )}
+          </div>
+
+          <div className="exec-detail-grid">
+            <article className="exec-detail-panel primary">
+              <h3>Selected Outcome</h3>
+              {selectedPath ? (
+                <>
+                  <strong>{selectedPath.outcome.name}</strong>
+                  <dl>
+                    <div><dt>Target date</dt><dd>{formatDate(selectedPath.outcome.finishDate)}</dd></div>
+                    <div><dt>Stream</dt><dd>{selectedPath.outcome.stream ?? "Not set"}</dd></div>
+                    <div><dt>RAG</dt><dd>{selectedPath.outcome.ragStatus ?? executiveToneLabels[executiveTone(selectedPath.outcome)]}</dd></div>
+                    <div><dt>Date confidence</dt><dd>{selectedPath.outcome.dateConfidence ?? "Not set"}</dd></div>
+                    <div><dt>Owner</dt><dd>{selectedPath.outcome.workstreamAccountableOwner ?? selectedPath.outcome.resourceNames?.join(", ") ?? "Not set"}</dd></div>
+                  </dl>
+                </>
+              ) : <p>No selected outcome.</p>}
             </article>
-            <article className="snapshot-section">
-              <h3>Decisions Needed</h3>
-              <div className="snapshot-list">
-                {decisions.length ? decisions.map((decision) => (
-                  <article key={decision.id}>
-                    <strong>{decision.title}</strong>
-                    <span>{formatDateOrText(decision.decisionRequiredByLabel ?? decision.decisionRequiredBy)} - {decision.decisionMaker ?? decision.owner ?? "Owner not set"}</span>
-                    {decision.status ? <em>{decision.status}</em> : null}
-                  </article>
-                )) : <p className="snapshot-empty">No open decisions found.</p>}
-              </div>
-            </article>
-            <article className="snapshot-section">
-              <h3>Top Risks / Issues</h3>
-              <div className="snapshot-list">
-                {blockers.length ? blockers.map((item) => (
-                  <article key={`${item.kind}-${item.id}`}>
-                    <strong>{item.title}</strong>
-                    <span>{item.kind} - {item.meta}</span>
-                    {item.status ? <em>{item.status}</em> : null}
-                  </article>
-                )) : <p className="snapshot-empty">No high priority blockers found.</p>}
-              </div>
-            </article>
-            <article className="snapshot-section">
-              <h3>Next High-Level Milestones</h3>
-              <div className="snapshot-list">
-                {milestones.length ? milestones.map((item) => (
-                  <article key={item.uid}>
+            <article className="exec-detail-panel">
+              <h3>Immediate Dependencies</h3>
+              <div className="exec-mini-list">
+                {selectedDependencies.length ? selectedDependencies.map((item) => (
+                  <div key={item.uid}>
+                    <span>{formatDate(item.finishDate)}</span>
                     <strong>{item.name}</strong>
-                    <span>{formatDate(item.finishDate)} - {item.stream ?? "No stream"}</span>
-                    {item.status ? <em>{item.status}</em> : null}
-                  </article>
-                )) : <p className="snapshot-empty">No high-level milestones found in the selected date window.</p>}
+                    <em className={executiveTone(item)}>{executiveToneLabels[executiveTone(item)]}</em>
+                  </div>
+                )) : <p>No dependency anchors or governance gates are tagged for this outcome yet.</p>}
               </div>
             </article>
-            <article className="snapshot-section snapshot-wide">
-              <h3>Priority Actions</h3>
-              <div className="snapshot-list snapshot-list-compact">
-                {actions.length ? actions.map((action) => (
-                  <article key={action.id}>
-                    <strong>{action.title}</strong>
-                    <span>{formatDate(action.dueDate)} - {action.owner ?? "Owner not set"}</span>
-                    {action.status ? <em>{action.status}</em> : null}
-                  </article>
-                )) : <p className="snapshot-empty">No dashboard or high priority actions found.</p>}
+            <article className="exec-detail-panel">
+              <h3>Steer / Decisions</h3>
+              <div className="exec-mini-list">
+                {(selectedRelatedDecisions.length ? selectedRelatedDecisions : decisions).slice(0, 4).map((decision) => (
+                  <div key={decision.id}>
+                    <span>{formatDateOrText(decision.decisionRequiredByLabel ?? decision.decisionRequiredBy)}</span>
+                    <strong>{decision.title}</strong>
+                    <em>{decision.status ?? "Open"}</em>
+                  </div>
+                ))}
+                {!decisions.length && !selectedRelatedDecisions.length ? <p>No open decisions are currently flagged.</p> : null}
               </div>
+            </article>
+            <article className="exec-detail-panel">
+              <h3>Risks / Issues</h3>
+              <div className="exec-mini-list">
+                {[...selectedRelatedIssues, ...selectedRelatedRisks, ...blockers].slice(0, 4).map((item) => (
+                  <div key={`${"kind" in item ? item.kind : "risk"}-${item.id}`}>
+                    <span>{"kind" in item ? item.kind : item.stream ?? "Risk"}</span>
+                    <strong>{item.title}</strong>
+                    <em>{("rag" in item && item.rag) || ("priority" in item && item.priority) || item.status || "Open"}</em>
+                  </div>
+                ))}
+                {!blockers.length && !selectedRelatedIssues.length && !selectedRelatedRisks.length ? <p>No high priority risks or issues are currently flagged.</p> : null}
+              </div>
+            </article>
+          </div>
+
+          <div className="exec-bottom-grid">
+            <article>
+              <h3>Current Ask</h3>
+              <p>{weekly?.askSteerNeeded ?? "No current ask is recorded in the imported tracker."}</p>
+            </article>
+            <article>
+              <h3>Main Blocker</h3>
+              <p>{weekly?.mainBlocker ?? blockers[0]?.title ?? "No blocker is recorded in the imported tracker."}</p>
+            </article>
+            <article>
+              <h3>Upcoming Gates</h3>
+              {upcomingSignificant.length ? upcomingSignificant.map((item) => (
+                <p key={item.uid}><strong>{formatDate(item.finishDate)}</strong> {item.name}</p>
+              )) : <p>No significant non-executive gates found in the selected date window.</p>}
             </article>
           </div>
         </section>
@@ -883,7 +1071,7 @@ function ExecutiveSnapshotView({
         <div className="snapshot-actions">
           <button className="download-action" type="button" onClick={onExportSnapshotPdf}>
             <Download size={15} />
-            Download Snapshot PDF
+            Download Executive View PDF
           </button>
         </div>
       ) : null}
@@ -1067,9 +1255,9 @@ function DownloadsHub({
       onClick: onExportJson,
     },
     {
-      title: "Executive snapshot PDF",
-      meta: "Exports the meeting-ready Executive Snapshot dashboard.",
-      action: "Download Snapshot",
+      title: "Executive view PDF",
+      meta: "Exports the meeting-ready Executive delivery roadmap.",
+      action: "Download Executive View",
       onClick: onExportSnapshotPdf,
     },
     {
@@ -1316,14 +1504,14 @@ function App() {
     setError(undefined);
     try {
       const element = document.getElementById("executive-snapshot-export");
-      if (!element) throw new Error("Open the Executive Snapshot page or Downloads page before exporting the snapshot.");
+      if (!element) throw new Error("Open the Executive View page or Downloads page before exporting the executive view.");
       await exportElementPdf({
         element,
         title: schedule.title,
-        fileNameSuffix: "executive-snapshot",
+        fileNameSuffix: "executive-view",
       });
     } catch (err) {
-      setError(err instanceof Error ? err.message : "The Executive Snapshot PDF could not be generated.");
+      setError(err instanceof Error ? err.message : "The Executive View PDF could not be generated.");
     }
   }
 

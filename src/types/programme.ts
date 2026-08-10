@@ -73,11 +73,17 @@ export type ProgrammeItem = {
   dependencyLevel?: string;
   criticalPathReview?: string;
   ragStatus?: string;
+  dateConfidence?: string;
+  targetMilestone?: string;
+  workstreamAccountableOwner?: string;
+  deliverySupportRoles?: string;
+  projectManagerAssurance?: string;
   discussed?: boolean;
   executiveMilestone?: boolean;
   boardReportable?: boolean;
   decisionRequired?: boolean;
   externalDependency?: boolean;
+  dependencyAnchor?: boolean;
   governanceGate?: boolean;
   delayDays?: number;
   delayWorkingDays?: number;

@@ -24,6 +24,7 @@ const FALLBACK_CUSTOM_FIELDS: Record<string, keyof ProgrammeItem> = {
   "188743754": "boardReportable",
   "188743755": "decisionRequired",
   "188743756": "externalDependency",
+  "188743758": "dependencyAnchor",
   "188743759": "governanceGate",
   "188743999": "ragStatus",
 };
@@ -78,11 +79,17 @@ function customFieldForDefinition(fieldName?: string, alias?: string): keyof Pro
   if (labels.some((label) => label === "dependency level" || label === "text9")) return "dependencyLevel";
   if (labels.some((label) => label === "critical path review" || label === "text10")) return "criticalPathReview";
   if (labels.some((label) => label === "rag status" || label === "text13")) return "ragStatus";
+  if (labels.some((label) => label === "date confidence" || label === "text19")) return "dateConfidence";
+  if (labels.some((label) => label === "target milestone" || label === "text20")) return "targetMilestone";
+  if (labels.some((label) => label === "workstream accountable owner" || label === "text21")) return "workstreamAccountableOwner";
+  if (labels.some((label) => label === "delivery support roles" || label === "text22")) return "deliverySupportRoles";
+  if (labels.some((label) => label === "project manager assurance" || label === "text23")) return "projectManagerAssurance";
   if (labels.some((label) => label === "discussed" || label === "flag1")) return "discussed";
   if (labels.some((label) => label === "executive milestones" || label === "flag2")) return "executiveMilestone";
   if (labels.some((label) => label === "board reportable" || label === "flag3")) return "boardReportable";
   if (labels.some((label) => label === "decision required" || label === "flag4")) return "decisionRequired";
   if (labels.some((label) => label === "external dependency" || label === "flag5")) return "externalDependency";
+  if (labels.some((label) => label === "dependency anchor" || label === "flag7")) return "dependencyAnchor";
   if (labels.some((label) => label === "governance gate" || label === "flag8")) return "governanceGate";
   return undefined;
 }
@@ -191,6 +198,7 @@ function applyCustomFields(
       fieldName === "boardReportable" ||
       fieldName === "decisionRequired" ||
       fieldName === "externalDependency" ||
+      fieldName === "dependencyAnchor" ||
       fieldName === "governanceGate"
     ) item[fieldName] = asBool(raw);
     else if (raw && raw !== "None" && raw !== "N/A") (item[fieldName] as string | boolean | undefined) = raw;
