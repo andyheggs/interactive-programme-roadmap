@@ -659,9 +659,10 @@ function executiveDependencyPaths(schedule: ProgrammeSchedule): ExecutivePath[] 
     const predecessors = collectPredecessorDependencies(outcome, byUid);
     const combined = new Map<string, ProgrammeItem>();
     predecessors.forEach((item) => combined.set(item.uid, item));
-    const dependencies = [...combined.values()]
+    const priorityDependencies = [...combined.values()]
       .sort((a, b) => executiveDependencyScore(b) - executiveDependencyScore(a) || bySoonest(a.finishDate, b.finishDate))
       .slice(0, 5);
+    const dependencies = priorityDependencies.sort((a, b) => bySoonest(a.finishDate, b.finishDate) || executiveDependencyScore(b) - executiveDependencyScore(a));
     return { outcome, dependencies };
   });
 }
@@ -955,7 +956,7 @@ function ExecutiveSnapshotView({
           </div>
 
           <div className="exec-legend" aria-label="Roadmap legend">
-            <span><i className="legend-dot green" /> Complete / green</span>
+            <span><i className="legend-dot green" /> Complete</span>
             <span><i className="legend-dot blue" /> Planned / on track</span>
             <span><i className="legend-dot amber" /> At risk / unconfirmed</span>
             <span><i className="legend-dot red" /> Blocked / overdue</span>
