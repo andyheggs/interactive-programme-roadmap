@@ -938,7 +938,7 @@ function ExecutiveSnapshotView({
     ...openIssues(tracker)
       .filter((issue) => issue.dashboardFlag || isRedOrAmber(issue.rag) || isRedOrAmber(issue.priority))
       .map((issue) => ({ id: `issue-${issue.id}`, title: issue.title, meta: issue.rag ?? issue.priority ?? issue.status ?? "Issue", dashboardFlag: issue.dashboardFlag })),
-  ]).slice(0, 3);
+  ]).slice(0, 5);
   const attentionItems = [
     weekly?.askSteerNeeded ? { id: "ask", title: weekly.askSteerNeeded, meta: "Current ask" } : undefined,
     weekly?.mainBlocker ? { id: "blocker", title: weekly.mainBlocker, meta: "Main blocker" } : undefined,
@@ -950,7 +950,7 @@ function ExecutiveSnapshotView({
   ]
     .filter((item): item is { id: string; title: string; meta: string } => Boolean(item?.title))
     .filter((item, index, items) => items.findIndex((candidate) => candidate.title === item.title) === index)
-    .slice(0, 3);
+    .slice(0, 5);
 
   return (
     <>
@@ -1057,7 +1057,7 @@ function ExecutiveSnapshotView({
             <article className="exec-watch-card">
               <h3>Next key enablers</h3>
               <div className="exec-watch-list gates">
-                {keyEnablers.slice(0, 3).map((item) => (
+                {keyEnablers.slice(0, 5).map((item) => (
                   <div key={item.uid}>
                     <span className="exec-date-chip">{formatDate(item.finishDate).replace(` ${parseDate(item.finishDate)?.getFullYear() ?? ""}`, "")}</span>
                     <strong>{item.name}</strong>
