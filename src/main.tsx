@@ -27,7 +27,7 @@ import {
   X,
 } from "lucide-react";
 import { exportProgrammePdf } from "./lib/exportProgrammePdf";
-import { exportElementPdf } from "./lib/exportElementPdf";
+import { exportExecutiveRoadmapPdf } from "./lib/exportExecutiveRoadmapPdf";
 import { exportTeamActionsPdf as exportTeamActionsA4Pdf } from "./lib/exportTeamActionsPdf";
 import { exportWeeklyStatusPdf as exportWeeklyStatusA4Pdf } from "./lib/exportWeeklyStatusPdf";
 import { parseMicrosoftProjectXml } from "./lib/parseMicrosoftProjectXml";
@@ -1223,11 +1223,12 @@ function ExecutiveSnapshotView({
 }) {
   const weekly = latestWeeklySummary(tracker);
   const reportingDate = new Date().toISOString();
-  const forwardWindow = { ...dateWindow, start: dateWindow.start ?? parseDate(reportingDate) };
+  const executiveWindow = { label: dateWindow.label, start: dateWindow.start ?? parseDate(reportingDate) };
+  const allExecutiveOutcomes = executiveMilestoneItems(schedule);
   const paths = executiveDependencyPaths(schedule)
-    .filter((path) => isForwardLookingExecutiveItem(path.outcome, forwardWindow));
+    .filter((path) => isForwardLookingExecutiveItem(path.outcome, executiveWindow));
   const deliveredMilestones = programmeMilestones(schedule)
-    .filter((item) => isHighLevelMilestone(item) && isHistoricDeliveredItem(item, forwardWindow))
+    .filter((item) => isHighLevelMilestone(item) && isHistoricDeliveredItem(item, executiveWindow))
     .sort((a, b) => (parseDate(b.finishDate)?.getTime() ?? 0) - (parseDate(a.finishDate)?.getTime() ?? 0));
   const [executiveMode, setExecutiveMode] = useState<"upcoming" | "delivered">("upcoming");
   const [selectedUid, setSelectedUid] = useState(paths[0]?.outcome.uid ?? "");
@@ -1244,13 +1245,10 @@ function ExecutiveSnapshotView({
   }, [byUid, expandedUid, paths, selectedUid]);
   const selectedPath = paths.find((path) => path.outcome.uid === selectedUid) ?? paths[0];
   const outcomes = paths.map((path) => path.outcome);
-  const deliveryOutcome = programmeDeliveryOutcome(schedule, outcomes);
+  const deliveryOutcome = programmeDeliveryOutcome(schedule, allExecutiveOutcomes);
   const programmeStatus = meaningfulText(weekly?.overallRag) ?? "Not captured";
   const programmeTone = toneClass(programmeStatus);
-  const latestBaselineFinish = schedule.items
-    .filter((item) => item.baselineFinish)
-    .sort((a, b) => bySoonest(b.baselineFinish, a.baselineFinish))[0]?.baselineFinish;
-  const originalDeliveryDate = deliveryOutcome?.baselineFinish ?? latestBaselineFinish;
+  const originalDeliveryDate = deliveryOutcome?.baselineFinish;
   const currentDeliveryDate = deliveryOutcome?.finishDate ?? schedule.finishDate;
   const toggleExpanded = (uid: string) => setExpandedUid((current) => current === uid ? "" : uid);
 
@@ -1445,7 +1443,7 @@ function ExecutiveSnapshotView({
             <>
               <div className="exec-section-label">
                 <h3>Delivered milestones</h3>
-                <p>Completed high-level programme milestones before {formatDate(forwardWindow.start?.toISOString())}.</p>
+                <p>Completed high-level programme milestones before {formatDate(executiveWindow.start?.toISOString())}.</p>
               </div>
               <div className="exec-delivered-grid">
                 {deliveredMilestones.length ? deliveredMilestones.map((item) => {
@@ -2207,13 +2205,7 @@ function App() {
   async function exportExecutiveSnapshotPdf() {
     setError(undefined);
     try {
-      const element = document.getElementById("executive-snapshot-export");
-      if (!element) throw new Error("Open the Executive View page or Downloads page before exporting the executive view.");
-      await exportElementPdf({
-        element,
-        title: schedule.title,
-        fileNameSuffix: "executive-view",
-      });
+      await exportExecutiveRoadmapPdf({ schedule, tracker, dateWindow });
     } catch (err) {
       setError(err instanceof Error ? err.message : "The Executive View PDF could not be generated.");
     }

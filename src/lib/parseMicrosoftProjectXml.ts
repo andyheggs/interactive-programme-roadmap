@@ -89,7 +89,7 @@ function customFieldForDefinition(fieldName?: string, alias?: string): keyof Pro
   if (labels.some((label) => label === "delivery support roles" || label === "text22")) return "deliverySupportRoles";
   if (labels.some((label) => label === "project manager assurance" || label === "text23")) return "projectManagerAssurance";
   if (labels.some((label) => label === "discussed" || label === "flag1")) return "discussed";
-  if (labels.some((label) => label === "executive milestones" || label === "flag2")) return "executiveMilestone";
+  if (labels.some((label) => label === "executive milestone" || label === "executive milestones" || label === "flag2")) return "executiveMilestone";
   if (labels.some((label) => label === "board reportable" || label === "flag3")) return "boardReportable";
   if (labels.some((label) => label === "decision required" || label === "flag4")) return "decisionRequired";
   if (labels.some((label) => label === "external dependency" || label === "flag5")) return "externalDependency";
