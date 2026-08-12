@@ -497,8 +497,29 @@ function sortFlaggedFirst<T extends { dashboardFlag?: boolean }>(items: T[]): T[
   return items.slice().sort((a, b) => Number(Boolean(b.dashboardFlag)) - Number(Boolean(a.dashboardFlag)));
 }
 
-function splitDigest(value?: string, limit = 3): string[] {
+function meaningfulText(value?: string): string | undefined {
   const text = value?.trim();
+  if (!text) return undefined;
+  const normalised = normaliseText(text);
+  if (!normalised) return undefined;
+  if (
+    normalised === "na" ||
+    normalised === "n a" ||
+    normalised === "none" ||
+    normalised === "nil" ||
+    normalised === "not set" ||
+    normalised === "not captured" ||
+    normalised.startsWith("not stated") ||
+    normalised.startsWith("to be confirmed") ||
+    normalised === "tbc"
+  ) {
+    return undefined;
+  }
+  return text;
+}
+
+function splitDigest(value?: string, limit = 3): string[] {
+  const text = meaningfulText(value);
   if (!text) return [];
   const lineParts = text.split(/\n+/).map((part) => part.trim()).filter(Boolean);
   const parts = lineParts.length > 1 ? lineParts : text.split(/(?<=[.!?])\s+/).map((part) => part.trim()).filter(Boolean);
@@ -520,13 +541,42 @@ function itemImportance(item: ProgrammeItem): number {
 }
 
 function latestWeeklySummary(tracker?: TrackerData) {
-  return tracker?.weeklySummaries
+  return sortedWeeklySummaries(tracker)[0];
+}
+
+function weeklySummaryDate(summary: { meetingDate?: string; weekEnding?: string; lastUpdated?: string }): Date | undefined {
+  return parseDate(summary.meetingDate) ?? parseDate(summary.weekEnding) ?? parseDate(summary.lastUpdated);
+}
+
+function sortedWeeklySummaries(tracker?: TrackerData) {
+  return (tracker?.weeklySummaries ?? [])
     .slice()
     .sort((a, b) => {
-      const aDate = parseDate(a.meetingDate) ?? parseDate(a.weekEnding) ?? parseDate(a.lastUpdated);
-      const bDate = parseDate(b.meetingDate) ?? parseDate(b.weekEnding) ?? parseDate(b.lastUpdated);
+      const aDate = weeklySummaryDate(a);
+      const bDate = weeklySummaryDate(b);
       return (bDate?.getTime() ?? 0) - (aDate?.getTime() ?? 0);
-    })[0];
+    });
+}
+
+function ragScore(value?: string): number | undefined {
+  const text = normaliseText(value);
+  if (text.includes("red")) return 3;
+  if (text.includes("amber")) return 2;
+  if (text.includes("green")) return 1;
+  return undefined;
+}
+
+function weeklyMovement(tracker?: TrackerData): string | undefined {
+  const summaries = sortedWeeklySummaries(tracker);
+  const current = summaries[0];
+  if (!current) return undefined;
+  const explicit = meaningfulText(current.ragMovement);
+  if (explicit) return explicit;
+  const currentScore = ragScore(current.overallRag);
+  const previousScore = ragScore(summaries[1]?.overallRag);
+  if (!currentScore || !previousScore) return undefined;
+  if (currentScore === previousScore) return "Stable";
+  return currentScore > previousScore ? "Worsened" : "Improved";
 }
 
 function isCompleteStatus(status?: string): boolean {
@@ -1331,7 +1381,7 @@ function WeeklyExecutiveStatusView({
   const reportingDate = weekly?.meetingDate ?? weekly?.weekEnding ?? new Date().toISOString();
   const forwardWindow = { ...dateWindow, start: dateWindow.start ?? parseDate(reportingDate) };
   const upcomingMilestones = programmeMilestones(schedule)
-    .filter((item) => isHighLevelMilestone(item) && isForwardLookingExecutiveItem(item, forwardWindow))
+    .filter((item) => isHighLevelMilestone(item) && dateWithin(item.finishDate, forwardWindow) && item.status !== "complete")
     .sort((a, b) => bySoonest(a.finishDate, b.finishDate))
     .slice(0, 5);
   const keyChanges = (tracker?.changes ?? [])
@@ -1351,6 +1401,12 @@ function WeeklyExecutiveStatusView({
     .sort((a, b) => bySoonest(a.decisionRequiredBy ?? a.decisionDate, b.decisionRequiredBy ?? b.decisionDate))
     .slice(0, 5);
   const ragTone = toneClass(weekly?.overallRag);
+  const movement = weeklyMovement(tracker);
+  const deliveryConfidence = meaningfulText(weekly?.goLiveConfidence);
+  const mainBlocker = meaningfulText(weekly?.mainBlocker) ?? risksIssues[0]?.title;
+  const progressItems = [...splitDigest(weekly?.keyProgress, 4), ...splitDigest(weekly?.whatChanged, 2)].slice(0, 5);
+  const priorityItems = splitDigest(weekly?.priorityActions, 5);
+  const leadershipAsk = meaningfulText(weekly?.askSteerNeeded) ?? meaningfulText(weekly?.decisionsNeeded) ?? decisions[0]?.title;
   const trackerStatus = tracker
     ? `${tracker.sourceFileName ?? "Tracker workbook"} | ${tracker.weeklySummaries.length} weekly summaries | ${tracker.risks.length} risks | ${tracker.issues.length} issues | ${tracker.actions.length} actions`
     : "Import the latest tracker workbook to populate RAG, weekly narrative, risks, decisions and actions.";
@@ -1366,12 +1422,12 @@ function WeeklyExecutiveStatusView({
         <header className="weekly-header">
           <div>
             <span className="snapshot-eyebrow">Weekly executive status</span>
-            <h2>DAF Programme Delivery</h2>
-            <p>{weekly?.openingLine ?? weekly?.ragRationale ?? "Import the latest tracker to populate the weekly status update."}</p>
+            <h2>{schedule.title}</h2>
+            <p>{meaningfulText(weekly?.openingLine) ?? meaningfulText(weekly?.ragRationale) ?? "Import the latest tracker to populate the weekly status update."}</p>
           </div>
           <div className="weekly-rag">
             <span>Overall RAG</span>
-            <strong>{weekly?.overallRag ?? "Not set"}</strong>
+            <strong>{meaningfulText(weekly?.overallRag) ?? "Not captured"}</strong>
             <em>{formatDate(reportingDate)}</em>
           </div>
         </header>
@@ -1379,15 +1435,15 @@ function WeeklyExecutiveStatusView({
         <section className="weekly-kpis">
           <article>
             <span>Movement</span>
-            <strong>{weekly?.ragMovement ?? "Not set"}</strong>
+            <strong>{movement ?? "Not captured"}</strong>
           </article>
           <article>
-            <span>Go-live confidence</span>
-            <strong>{weekly?.goLiveConfidence ?? "Not set"}</strong>
+            <span>Delivery confidence</span>
+            <strong>{deliveryConfidence ?? "Not captured"}</strong>
           </article>
           <article>
             <span>Main blocker</span>
-            <strong>{weekly?.mainBlocker ?? risksIssues[0]?.title ?? "None flagged"}</strong>
+            <strong>{mainBlocker ?? "None flagged"}</strong>
           </article>
           <article>
             <span>Next key date</span>
@@ -1398,17 +1454,17 @@ function WeeklyExecutiveStatusView({
         <section className="weekly-focus">
           <article className="weekly-panel">
             <h3>Last week</h3>
-            {[...splitDigest(weekly?.keyProgress, 4), ...splitDigest(weekly?.whatChanged, 2)].slice(0, 5).map((item) => <p key={item}>{item}</p>)}
-            {!weekly?.keyProgress && !weekly?.whatChanged ? <p>No weekly progress summary found.</p> : null}
+            {progressItems.map((item) => <p key={item}>{item}</p>)}
+            {!progressItems.length ? <p>No weekly progress summary found.</p> : null}
           </article>
           <article className="weekly-panel">
             <h3>This week / next</h3>
-            {splitDigest(weekly?.priorityActions, 5).map((item) => <p key={item}>{item}</p>)}
-            {!weekly?.priorityActions ? <p>No priority actions summary found.</p> : null}
+            {priorityItems.map((item) => <p key={item}>{item}</p>)}
+            {!priorityItems.length ? <p>No priority actions summary found.</p> : null}
           </article>
           <article className="weekly-panel weekly-ask">
             <h3>Leadership ask</h3>
-            <p>{weekly?.askSteerNeeded ?? weekly?.decisionsNeeded ?? decisions[0]?.title ?? "No current leadership ask flagged."}</p>
+            <p>{leadershipAsk ?? "No current leadership ask flagged."}</p>
           </article>
         </section>
 
