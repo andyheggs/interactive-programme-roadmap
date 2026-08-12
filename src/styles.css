@@ -542,6 +542,8 @@ h1 { max-width: 980px; margin-bottom: 8px; font-size: clamp(1.55rem, 3vw, 2.4rem
 }
 .snapshot-actions {
   display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
   justify-content: flex-end;
   margin-top: 14px;
 }
@@ -561,6 +563,25 @@ body.snapshot-exporting * {
 body.snapshot-exporting .exec-node small,
 body.snapshot-exporting .exec-outcome-detail small {
   display: none !important;
+}
+body.executive-export-light {
+  --page: #ffffff;
+}
+body.executive-export-light .snapshot-export-target,
+body.executive-export-light .executive-roadmap {
+  --exec-bg: #ffffff;
+  --exec-panel: #ffffff;
+  --exec-panel-soft: #f4f7f5;
+  --exec-line: #c7d1cb;
+  --exec-text: #17201b;
+  --exec-muted: #647269;
+  --exec-green: #2e7d55;
+  --exec-blue: #3d78a9;
+  --exec-amber: #ff8a00;
+  --exec-red: #b33a32;
+  --exec-grey: #7e8c84;
+  color: var(--exec-text);
+  background: #ffffff;
 }
 .snapshot-hero {
   display: grid;

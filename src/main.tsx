@@ -28,6 +28,11 @@ import {
 } from "lucide-react";
 import { exportProgrammePdf } from "./lib/exportProgrammePdf";
 import { exportExecutiveRoadmapPdf } from "./lib/exportExecutiveRoadmapPdf";
+import {
+  exportExecutiveRoadmapHtml,
+  exportExecutiveRoadmapImage,
+  exportExecutiveRoadmapPosterPdf,
+} from "./lib/exportExecutiveRoadmapVisuals";
 import { exportTeamActionsPdf as exportTeamActionsA4Pdf } from "./lib/exportTeamActionsPdf";
 import { exportWeeklyStatusPdf as exportWeeklyStatusA4Pdf } from "./lib/exportWeeklyStatusPdf";
 import { parseMicrosoftProjectXml } from "./lib/parseMicrosoftProjectXml";
@@ -1215,11 +1220,17 @@ function ExecutiveSnapshotView({
   tracker,
   dateWindow,
   onExportSnapshotPdf,
+  onExportSnapshotImage,
+  onExportSnapshotPosterPdf,
+  onExportSnapshotHtml,
 }: {
   schedule: ProgrammeSchedule;
   tracker?: TrackerData;
   dateWindow: DateWindow;
   onExportSnapshotPdf?: () => void;
+  onExportSnapshotImage?: () => void;
+  onExportSnapshotPosterPdf?: () => void;
+  onExportSnapshotHtml?: () => void;
 }) {
   const weekly = latestWeeklySummary(tracker);
   const reportingDate = new Date().toISOString();
@@ -1470,8 +1481,26 @@ function ExecutiveSnapshotView({
         <div className="snapshot-actions">
           <button className="download-action" type="button" onClick={onExportSnapshotPdf}>
             <Download size={15} />
-            Download Executive View PDF
+            Table PDF
           </button>
+          {onExportSnapshotPosterPdf ? (
+            <button className="download-action" type="button" onClick={onExportSnapshotPosterPdf}>
+              <Download size={15} />
+              Poster PDF
+            </button>
+          ) : null}
+          {onExportSnapshotImage ? (
+            <button className="download-action" type="button" onClick={onExportSnapshotImage}>
+              <Download size={15} />
+              Roadmap PNG
+            </button>
+          ) : null}
+          {onExportSnapshotHtml ? (
+            <button className="download-action" type="button" onClick={onExportSnapshotHtml}>
+              <Download size={15} />
+              HTML
+            </button>
+          ) : null}
         </div>
       ) : null}
     </>
@@ -1922,6 +1951,9 @@ function DownloadsHub({
   onExportPosterPdf,
   onExportJson,
   onExportSnapshotPdf,
+  onExportSnapshotImage,
+  onExportSnapshotPosterPdf,
+  onExportSnapshotHtml,
 }: {
   schedule: ProgrammeSchedule;
   tracker?: TrackerData;
@@ -1930,6 +1962,9 @@ function DownloadsHub({
   onExportPosterPdf: () => void;
   onExportJson: () => void;
   onExportSnapshotPdf: () => void;
+  onExportSnapshotImage: () => void;
+  onExportSnapshotPosterPdf: () => void;
+  onExportSnapshotHtml: () => void;
 }) {
   const downloads = [
     {
@@ -1952,9 +1987,27 @@ function DownloadsHub({
     },
     {
       title: "Executive view PDF",
-      meta: "Exports the meeting-ready Executive delivery roadmap.",
-      action: "Download Executive View",
+      meta: "Exports the detailed A4 table pack for the Executive delivery roadmap.",
+      action: "Download Table PDF",
       onClick: onExportSnapshotPdf,
+    },
+    {
+      title: "Executive roadmap poster PDF",
+      meta: "Exports a designed print-safe executive roadmap poster without slicing the web page.",
+      action: "Download Poster PDF",
+      onClick: onExportSnapshotPosterPdf,
+    },
+    {
+      title: "Executive roadmap image",
+      meta: "Exports the visible Executive View as a high-resolution PNG for Teams, email or slides.",
+      action: "Download PNG",
+      onClick: onExportSnapshotImage,
+    },
+    {
+      title: "Executive standalone HTML",
+      meta: "Exports a self-contained browser file with the executive roadmap and print styling.",
+      action: "Download HTML",
+      onClick: onExportSnapshotHtml,
     },
     {
       title: "Board report PDF",
@@ -2017,6 +2070,9 @@ function ReportingContent({
   onExportPosterPdf,
   onExportJson,
   onExportSnapshotPdf,
+  onExportSnapshotImage,
+  onExportSnapshotPosterPdf,
+  onExportSnapshotHtml,
   onExportWeeklyStatusPdf,
   onExportTeamActionsPdf,
 }: {
@@ -2030,11 +2086,24 @@ function ReportingContent({
   onExportPosterPdf: () => void;
   onExportJson: () => void;
   onExportSnapshotPdf: () => void;
+  onExportSnapshotImage: () => void;
+  onExportSnapshotPosterPdf: () => void;
+  onExportSnapshotHtml: () => void;
   onExportWeeklyStatusPdf: () => void;
   onExportTeamActionsPdf: (items: TeamWorkItem[]) => void;
 }) {
   if (page === "home") return <HomeDashboard schedule={schedule} tracker={tracker} dateWindow={dateWindow} />;
-  if (page === "ceo") return <ExecutiveSnapshotView schedule={schedule} tracker={tracker} dateWindow={dateWindow} onExportSnapshotPdf={onExportSnapshotPdf} />;
+  if (page === "ceo") return (
+    <ExecutiveSnapshotView
+      schedule={schedule}
+      tracker={tracker}
+      dateWindow={dateWindow}
+      onExportSnapshotPdf={onExportSnapshotPdf}
+      onExportSnapshotImage={onExportSnapshotImage}
+      onExportSnapshotPosterPdf={onExportSnapshotPosterPdf}
+      onExportSnapshotHtml={onExportSnapshotHtml}
+    />
+  );
   if (page === "weekly-status") return <WeeklyExecutiveStatusView schedule={schedule} tracker={tracker} dateWindow={dateWindow} onExportPdf={onExportWeeklyStatusPdf} />;
   if (page === "team-actions") return <TeamActionTrackerView schedule={schedule} tracker={tracker} dateWindow={dateWindow} onExportPdf={onExportTeamActionsPdf} />;
   if (page === "board") return <BoardReportView schedule={schedule} tracker={tracker} dateWindow={dateWindow} />;
@@ -2044,7 +2113,20 @@ function ReportingContent({
   if (page === "dependencies") return <DependencyView schedule={schedule} tracker={tracker} />;
   if (page === "workstreams") return <WorkstreamViews schedule={schedule} tracker={tracker} />;
   if (page === "partner") return <PartnerView schedule={schedule} tracker={tracker} />;
-  if (page === "downloads") return <DownloadsHub schedule={schedule} tracker={tracker} dateWindow={dateWindow} onExportPdf={onExportPdf} onExportPosterPdf={onExportPosterPdf} onExportJson={onExportJson} onExportSnapshotPdf={onExportSnapshotPdf} />;
+  if (page === "downloads") return (
+    <DownloadsHub
+      schedule={schedule}
+      tracker={tracker}
+      dateWindow={dateWindow}
+      onExportPdf={onExportPdf}
+      onExportPosterPdf={onExportPosterPdf}
+      onExportJson={onExportJson}
+      onExportSnapshotPdf={onExportSnapshotPdf}
+      onExportSnapshotImage={onExportSnapshotImage}
+      onExportSnapshotPosterPdf={onExportSnapshotPosterPdf}
+      onExportSnapshotHtml={onExportSnapshotHtml}
+    />
+  );
   if (page === "release-roadmap") return <ReleasePlaceholder title="Release Roadmap" />;
   if (page === "version-scope") return <ReleasePlaceholder title="Version Scope" />;
   if (page === "release-readiness") return <ReleasePlaceholder title="Release Readiness" />;
@@ -2211,6 +2293,35 @@ function App() {
     }
   }
 
+  async function exportExecutiveSnapshotImage() {
+    setError(undefined);
+    try {
+      const element = document.getElementById("executive-snapshot-export");
+      if (!element) throw new Error("Open the Executive View page or Downloads page before exporting the executive roadmap image.");
+      await exportExecutiveRoadmapImage(element, schedule);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "The Executive View image could not be generated.");
+    }
+  }
+
+  async function exportExecutiveSnapshotPosterPdf() {
+    setError(undefined);
+    try {
+      await exportExecutiveRoadmapPosterPdf(schedule, tracker, dateWindow);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "The Executive roadmap poster PDF could not be generated.");
+    }
+  }
+
+  function exportExecutiveSnapshotHtml() {
+    setError(undefined);
+    try {
+      exportExecutiveRoadmapHtml(schedule, tracker, dateWindow);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "The Executive roadmap HTML file could not be generated.");
+    }
+  }
+
   async function exportWeeklyStatusPdf() {
     setError(undefined);
     try {
@@ -2317,6 +2428,9 @@ function App() {
             onExportPosterPdf={exportPosterPdf}
             onExportJson={exportJson}
             onExportSnapshotPdf={exportExecutiveSnapshotPdf}
+            onExportSnapshotImage={exportExecutiveSnapshotImage}
+            onExportSnapshotPosterPdf={exportExecutiveSnapshotPosterPdf}
+            onExportSnapshotHtml={exportExecutiveSnapshotHtml}
             onExportWeeklyStatusPdf={exportWeeklyStatusPdf}
             onExportTeamActionsPdf={exportTeamActionsPdf}
           />
