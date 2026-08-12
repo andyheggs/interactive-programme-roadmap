@@ -778,6 +778,13 @@ function executiveMilestoneItems(schedule: ProgrammeSchedule): ProgrammeItem[] {
   return programmeMilestones(schedule).filter((item) => itemImportance(item) >= 4).slice(0, 5);
 }
 
+function programmeDeliveryOutcome(schedule: ProgrammeSchedule, outcomes: ProgrammeItem[]): ProgrammeItem | undefined {
+  const candidates = outcomes.length ? outcomes : executiveMilestoneItems(schedule);
+  return candidates.find((item) => /platform.*go live|go live/i.test(item.name))
+    ?? candidates.slice().sort((a, b) => bySoonest(b.finishDate, a.finishDate))[0]
+    ?? schedule.items.slice().sort((a, b) => bySoonest(b.finishDate, a.finishDate))[0];
+}
+
 function significantDependency(item: ProgrammeItem): boolean {
   const level = `${item.milestoneLevel ?? ""} ${item.dependencyLevel ?? ""}`.toLowerCase();
   return Boolean(
@@ -1002,7 +1009,7 @@ function collectPredecessorDependencies(outcome: ProgrammeItem, byUid: Map<strin
 }
 
 function executiveDependencyPaths(schedule: ProgrammeSchedule): ExecutivePath[] {
-  const outcomes = executiveMilestoneItems(schedule).slice(0, 5);
+  const outcomes = executiveMilestoneItems(schedule);
   const byUid = new Map(schedule.items.map((item) => [item.uid, item]));
   return outcomes.map((outcome) => {
     const dependencies = collectPredecessorDependencies(outcome, byUid);
@@ -1214,6 +1221,7 @@ function ExecutiveSnapshotView({
   dateWindow: DateWindow;
   onExportSnapshotPdf?: () => void;
 }) {
+  const weekly = latestWeeklySummary(tracker);
   const reportingDate = new Date().toISOString();
   const forwardWindow = { ...dateWindow, start: dateWindow.start ?? parseDate(reportingDate) };
   const paths = executiveDependencyPaths(schedule)
@@ -1236,6 +1244,14 @@ function ExecutiveSnapshotView({
   }, [byUid, expandedUid, paths, selectedUid]);
   const selectedPath = paths.find((path) => path.outcome.uid === selectedUid) ?? paths[0];
   const outcomes = paths.map((path) => path.outcome);
+  const deliveryOutcome = programmeDeliveryOutcome(schedule, outcomes);
+  const programmeStatus = meaningfulText(weekly?.overallRag) ?? "Not captured";
+  const programmeTone = toneClass(programmeStatus);
+  const latestBaselineFinish = schedule.items
+    .filter((item) => item.baselineFinish)
+    .sort((a, b) => bySoonest(b.baselineFinish, a.baselineFinish))[0]?.baselineFinish;
+  const originalDeliveryDate = deliveryOutcome?.baselineFinish ?? latestBaselineFinish;
+  const currentDeliveryDate = deliveryOutcome?.finishDate ?? schedule.finishDate;
   const toggleExpanded = (uid: string) => setExpandedUid((current) => current === uid ? "" : uid);
 
   return (
@@ -1251,6 +1267,25 @@ function ExecutiveSnapshotView({
             </div>
             <strong>Reporting date: {formatDate(reportingDate)}</strong>
           </header>
+
+          <div className="exec-programme-strip">
+            <article>
+              <span>Programme status</span>
+              <strong className={`exec-text-${programmeTone === "neutral" ? "grey" : programmeTone}`}>{programmeStatus}</strong>
+            </article>
+            <article>
+              <span>Original delivery plan</span>
+              <strong>{formatDate(originalDeliveryDate)}</strong>
+            </article>
+            <article>
+              <span>Current forecast</span>
+              <strong>{formatDate(currentDeliveryDate)}</strong>
+            </article>
+            <article>
+              <span>Forecast basis</span>
+              <strong>{deliveryOutcome?.name ?? "Programme finish"}</strong>
+            </article>
+          </div>
 
           <div className="exec-view-tabs" role="tablist" aria-label="Executive roadmap view">
             <button

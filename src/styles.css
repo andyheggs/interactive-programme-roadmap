@@ -558,6 +558,10 @@ body.snapshot-exporting * {
   animation: none !important;
   transition: none !important;
 }
+body.snapshot-exporting .exec-node small,
+body.snapshot-exporting .exec-outcome-detail small {
+  display: none !important;
+}
 .snapshot-hero {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 190px;
@@ -814,6 +818,32 @@ body.snapshot-exporting * {
 .exec-position-strip div strong {
   font-size: 1rem;
 }
+.exec-programme-strip {
+  display: grid;
+  grid-template-columns: 0.85fr 0.9fr 0.9fr minmax(0, 1.45fr);
+  gap: 12px;
+}
+.exec-programme-strip article {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+  padding: 14px;
+  border: 1px solid #34404d;
+  border-radius: 8px;
+  background: #171c24;
+}
+.exec-programme-strip span {
+  color: var(--exec-muted);
+  font-size: 0.74rem;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+.exec-programme-strip strong {
+  overflow-wrap: anywhere;
+  color: var(--exec-text);
+  font-size: 0.95rem;
+  line-height: 1.32;
+}
 .exec-view-tabs {
   display: inline-flex;
   width: fit-content;
@@ -884,7 +914,7 @@ body.snapshot-exporting * {
 .exec-text-grey { color: #c0c6cd; }
 .exec-outcome-cards {
   display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
   gap: 12px;
 }
 .exec-outcome-summary {
@@ -1792,6 +1822,7 @@ body.snapshot-exporting * {
   .executive-roadmap { padding: 12px; }
   .exec-roadmap-header,
   .exec-position-strip,
+  .exec-programme-strip,
   .exec-path-toolbar,
   .exec-outcome-cards { grid-template-columns: 1fr; }
   .exec-section-label {
