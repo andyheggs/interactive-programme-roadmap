@@ -33,7 +33,8 @@ import {
   exportExecutiveRoadmapImage,
   exportExecutiveRoadmapPosterPdf,
 } from "./lib/exportExecutiveRoadmapVisuals";
-import { executiveToneAssessment } from "./lib/executiveRoadmapData";
+import { exportGanttPdf, type GanttPdfSection } from "./lib/exportGanttPdf";
+import { buildExecutiveRoadmapModel, executiveToneAssessment } from "./lib/executiveRoadmapData";
 import { exportTeamActionsPdf as exportTeamActionsA4Pdf } from "./lib/exportTeamActionsPdf";
 import { exportWeeklyStatusPdf as exportWeeklyStatusA4Pdf } from "./lib/exportWeeklyStatusPdf";
 import { parseMicrosoftProjectXml } from "./lib/parseMicrosoftProjectXml";
@@ -80,6 +81,7 @@ type AppPage =
   | "reporting-roadmap"
   | "risks"
   | "actions"
+  | "gantt"
   | "release-roadmap"
   | "version-scope"
   | "release-readiness"
@@ -96,6 +98,7 @@ const appPages: Array<{ key: AppPage; label: string; group: "core" | "reporting"
   { key: "team-actions", label: "Team Action Tracker", group: "reporting" },
   { key: "board", label: "Board Report", group: "reporting" },
   { key: "reporting-roadmap", label: "Reporting Roadmap", group: "reporting" },
+  { key: "gantt", label: "Gantt View", group: "reporting" },
   { key: "risks", label: "Risks & Issues", group: "reporting" },
   { key: "actions", label: "Actions & Decisions", group: "reporting" },
   { key: "dependencies", label: "Dependencies", group: "reporting" },
@@ -727,6 +730,48 @@ function periodMilestones(schedule: ProgrammeSchedule, window: DateWindow): Prog
   return programmeMilestones(schedule)
     .filter((item) => dateWithin(item.finishDate, window) && item.status !== "complete")
     .sort((a, b) => bySoonest(a.finishDate, b.finishDate));
+}
+
+type GanttLevel = "executive" | "milestones" | "all";
+
+const ganttLevels: Array<{ key: GanttLevel; label: string; description: string }> = [
+  {
+    key: "executive",
+    label: "Executive Gantt",
+    description: "Executive milestones and the key predecessor items linked to them.",
+  },
+  {
+    key: "milestones",
+    label: "Milestone Gantt",
+    description: "Roadmap, board-reportable and standard milestones in the selected date window.",
+  },
+  {
+    key: "all",
+    label: "Full Schedule Gantt",
+    description: "All active dated Project plan items, grouped by workstream.",
+  },
+];
+
+function uniqueItems(items: ProgrammeItem[]): ProgrammeItem[] {
+  return [...new Map(items.map((item) => [item.uid, item])).values()];
+}
+
+function ganttItemsForLevel(schedule: ProgrammeSchedule, dateWindow: DateWindow, level: GanttLevel): ProgrammeItem[] {
+  const withinWindow = (item: ProgrammeItem) => item.isActive && overlapsDateWindow(item, dateWindow) && (parseDate(item.startDate) || parseDate(item.finishDate));
+  if (level === "executive") {
+    const model = buildExecutiveRoadmapModel(schedule, undefined, dateWindow);
+    return uniqueItems(model.paths.flatMap((path) => [...path.dependencies, path.outcome]))
+      .filter(withinWindow)
+      .sort((a, b) => bySoonest(a.startDate ?? a.finishDate, b.startDate ?? b.finishDate));
+  }
+  if (level === "milestones") {
+    return schedule.items
+      .filter((item) => withinWindow(item) && (item.isMilestone || item.roadmapMilestone || item.boardReportable || item.executiveMilestone))
+      .sort((a, b) => itemImportance(b) - itemImportance(a) || bySoonest(a.finishDate, b.finishDate));
+  }
+  return schedule.items
+    .filter(withinWindow)
+    .sort((a, b) => (a.stream ?? "").localeCompare(b.stream ?? "") || bySoonest(a.startDate ?? a.finishDate, b.startDate ?? b.finishDate));
 }
 
 function lateMilestones(schedule: ProgrammeSchedule): ProgrammeItem[] {
@@ -1704,6 +1749,163 @@ function ReportingRoadmapView({ schedule, dateWindow, selected, onSelect }: { sc
   );
 }
 
+function ganttTone(item: ProgrammeItem): "summary" | "complete" | "risk" | "late" | "task" {
+  if (item.status === "late" || item.status === "blocked" || (item.delayDays ?? 0) > 0) return "late";
+  if (item.status === "at-risk" || item.externalDependency || item.decisionRequired) return "risk";
+  if (item.status === "complete") return "complete";
+  if (item.isSummary) return "summary";
+  return "task";
+}
+
+function ganttScaleTicks(bounds: ReturnType<typeof timelineBounds>) {
+  const ticks: Array<{ label: string; left: number }> = [];
+  const cursor = new Date(Date.UTC(bounds.min.getUTCFullYear(), bounds.min.getUTCMonth(), 1));
+  while (cursor <= bounds.max) {
+    ticks.push({
+      label: new Intl.DateTimeFormat("en-GB", { month: "short", year: "2-digit" }).format(cursor),
+      left: clamp(((cursor.getTime() - bounds.min.getTime()) / bounds.span) * 100, 0, 100),
+    });
+    cursor.setUTCMonth(cursor.getUTCMonth() + 1);
+  }
+  return ticks;
+}
+
+function GanttChart({
+  schedule,
+  items,
+  selected,
+  onSelect,
+  dateWindow,
+}: {
+  schedule: ProgrammeSchedule;
+  items: ProgrammeItem[];
+  selected?: ProgrammeItem;
+  onSelect: (item: ProgrammeItem) => void;
+  dateWindow: DateWindow;
+}) {
+  const visibleItems = items.slice(0, 220);
+  const bounds = useMemo(() => timelineBounds(visibleItems.length ? visibleItems : schedule.items, schedule, dateWindow), [dateWindow, schedule, visibleItems]);
+  const ticks = useMemo(() => ganttScaleTicks(bounds), [bounds]);
+  const statusMarker = positionFor(schedule.statusDate, bounds);
+  return (
+    <section className="gantt-shell">
+      <div className="gantt-summary">
+        <strong>{visibleItems.length}</strong> items shown
+        {items.length > visibleItems.length ? <span> from {items.length} dated items</span> : null}
+        <span>{dateWindow.label}</span>
+      </div>
+      <div className="gantt-legend">
+        <span><i className="gantt-key summary" />Summary</span>
+        <span><i className="gantt-key task" />Planned</span>
+        <span><i className="gantt-key complete" />Complete</span>
+        <span><i className="gantt-key risk" />At risk</span>
+        <span><i className="gantt-key late" />Late / blocked</span>
+        <span><Diamond size={13} />Milestone</span>
+        <span><i className="gantt-key baseline" />Baseline finish</span>
+      </div>
+      <div className="gantt-board" style={{ ["--status-left" as string]: `${statusMarker}%` }}>
+        <div className="gantt-label-head">Item</div>
+        <div className="gantt-scale">
+          {ticks.map((tick) => (
+            <span key={`${tick.label}-${tick.left}`} style={{ left: `${tick.left}%` }}>{tick.label}</span>
+          ))}
+        </div>
+        {visibleItems.map((item) => {
+          const start = item.isMilestone ? positionFor(item.finishDate, bounds) : positionFor(item.startDate ?? item.finishDate, bounds);
+          const finish = positionFor(item.finishDate ?? item.startDate, bounds);
+          const left = Math.min(start, finish);
+          const width = Math.max(0.9, Math.abs(finish - start));
+          const baseline = positionFor(item.baselineFinish, bounds);
+          const tone = ganttTone(item);
+          return (
+            <React.Fragment key={item.uid}>
+              <button
+                className={`gantt-label ${selected?.uid === item.uid ? "selected" : ""}`}
+                type="button"
+                onClick={() => onSelect(item)}
+              >
+                <span>{item.stream ?? item.roadmapView ?? "No stream"}</span>
+                <strong>{item.name}</strong>
+              </button>
+              <div className="gantt-row">
+                {item.baselineFinish ? <i className="gantt-baseline" style={{ left: `${baseline}%` }} /> : null}
+                <button
+                  className={`gantt-bar ${tone} ${item.isMilestone ? "milestone" : ""} ${item.executiveMilestone ? "executive" : ""}`}
+                  type="button"
+                  style={{ left: `${left}%`, width: item.isMilestone ? undefined : `${width}%` }}
+                  onClick={() => onSelect(item)}
+                  title={`${item.name} · ${formatDate(item.startDate)} to ${formatDate(item.finishDate)}`}
+                >
+                  <span>{item.isMilestone ? formatDate(item.finishDate) : `${formatDate(item.startDate)} - ${formatDate(item.finishDate)}`}</span>
+                </button>
+              </div>
+            </React.Fragment>
+          );
+        })}
+        {!visibleItems.length ? (
+          <div className="gantt-empty">No dated items found for this Gantt level and date window.</div>
+        ) : null}
+      </div>
+    </section>
+  );
+}
+
+function GanttView({ schedule, dateWindow, selected, onSelect }: { schedule: ProgrammeSchedule; dateWindow: DateWindow; selected?: ProgrammeItem; onSelect: (item: ProgrammeItem) => void }) {
+  const [level, setLevel] = useState<GanttLevel>("executive");
+  const [exportError, setExportError] = useState<string>();
+  const sections = useMemo(() => ganttLevels.map((entry) => ({
+    key: entry.key,
+    label: entry.label,
+    description: entry.description,
+    items: ganttItemsForLevel(schedule, dateWindow, entry.key),
+  })), [dateWindow, schedule]);
+  const active = sections.find((entry) => entry.key === level) ?? sections[0];
+  const exportSections = async (targetSections: GanttPdfSection[]) => {
+    setExportError(undefined);
+    try {
+      await exportGanttPdf(schedule, targetSections, dateWindow);
+    } catch (err) {
+      setExportError(err instanceof Error ? err.message : "The Gantt PDF could not be generated.");
+    }
+  };
+
+  return (
+    <>
+      <PageIntro title="Gantt View">A date-led schedule view with executive, milestone and full-plan levels kept together for review and export.</PageIntro>
+      <section className="gantt-controls">
+        <div className="tabs">
+          {sections.map((entry) => (
+            <button
+              className={entry.key === level ? "active" : ""}
+              type="button"
+              key={entry.key}
+              onClick={() => setLevel(entry.key)}
+            >
+              {entry.label}
+            </button>
+          ))}
+        </div>
+        <div className="gantt-downloads">
+          <button className="download-action" type="button" onClick={() => exportSections([{ label: active.label, items: active.items }])}>
+            <Download size={15} />
+            Download current level
+          </button>
+          <button className="download-action secondary" type="button" onClick={() => exportSections(sections.map((entry) => ({ label: entry.label, items: entry.items })))}>
+            <Download size={15} />
+            Download all levels
+          </button>
+        </div>
+      </section>
+      {exportError ? <div className="error">{exportError}</div> : null}
+      <section className="gantt-level-note">
+        <strong>{active.label}</strong>
+        <span>{active.description}</span>
+      </section>
+      <GanttChart schedule={schedule} items={active.items} selected={selected} onSelect={onSelect} dateWindow={dateWindow} />
+    </>
+  );
+}
+
 function RisksIssuesView({ tracker }: { tracker?: TrackerData }) {
   const risks = openRisks(tracker);
   const issues = openIssues(tracker);
@@ -2110,6 +2312,7 @@ function ReportingContent({
   if (page === "team-actions") return <TeamActionTrackerView schedule={schedule} tracker={tracker} dateWindow={dateWindow} onExportPdf={onExportTeamActionsPdf} />;
   if (page === "board") return <BoardReportView schedule={schedule} tracker={tracker} dateWindow={dateWindow} />;
   if (page === "reporting-roadmap") return <ReportingRoadmapView schedule={schedule} dateWindow={dateWindow} selected={selected} onSelect={setSelected} />;
+  if (page === "gantt") return <GanttView schedule={schedule} dateWindow={dateWindow} selected={selected} onSelect={setSelected} />;
   if (page === "risks") return <RisksIssuesView tracker={tracker} />;
   if (page === "actions") return <ActionsDecisionsView schedule={schedule} tracker={tracker} dateWindow={dateWindow} />;
   if (page === "dependencies") return <DependencyView schedule={schedule} tracker={tracker} />;
@@ -2380,7 +2583,7 @@ function App() {
       <nav className="app-nav" aria-label="Application sections">
         {appPages.map((item) => (
           <button type="button" className={`${page === item.key ? "active" : ""} ${item.group}`} onClick={() => setPage(item.key)} key={item.key}>
-            {item.key === "workspace" ? <Layers size={15} /> : item.group === "future" ? <CalendarDays size={15} /> : item.key === "workstreams" || item.key === "partner" ? <Users size={15} /> : item.key === "actions" ? <ClipboardCheck size={15} /> : <LayoutDashboard size={15} />}
+            {item.key === "workspace" ? <Layers size={15} /> : item.key === "gantt" ? <GitBranch size={15} /> : item.group === "future" ? <CalendarDays size={15} /> : item.key === "workstreams" || item.key === "partner" ? <Users size={15} /> : item.key === "actions" ? <ClipboardCheck size={15} /> : <LayoutDashboard size={15} />}
             {item.label}
           </button>
         ))}
