@@ -132,7 +132,7 @@ h1 { max-width: 980px; margin-bottom: 8px; font-size: clamp(1.55rem, 3vw, 2.4rem
 
 .summary-bar {
   display: grid;
-  grid-template-columns: repeat(8, minmax(110px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(118px, 1fr));
   gap: 1px;
   margin: 0;
   background: var(--border);
@@ -1339,6 +1339,35 @@ body.snapshot-exporting * {
   color: white;
   background: linear-gradient(135deg, #214c43, #315e9c);
 }
+.weekly-source {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: center;
+  margin-bottom: 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface-strong);
+  color: var(--text);
+}
+.weekly-source span,
+.weekly-source em {
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-style: normal;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+.weekly-source strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.weekly-source.missing {
+  border-color: var(--warning);
+  background: var(--warning-bg);
+}
 .weekly-header h2 {
   margin: 0 0 8px;
   font-size: 1.7rem;
@@ -1646,6 +1675,7 @@ body.snapshot-exporting * {
   .exec-bottom-grid,
   .exec-watchlist-grid,
   .weekly-header,
+  .weekly-source,
   .weekly-focus,
   .weekly-grid,
   .team-filter-grid,

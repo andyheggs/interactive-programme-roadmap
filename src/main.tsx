@@ -223,19 +223,20 @@ function positionFor(dateValue: string | undefined, bounds: ReturnType<typeof ti
   return clamp(((date.getTime() - bounds.min.getTime()) / bounds.span) * 100, 0, 100);
 }
 
-function SummaryBar({ schedule }: { schedule: ProgrammeSchedule }) {
+function SummaryBar({ schedule, tracker }: { schedule: ProgrammeSchedule; tracker?: TrackerData }) {
   const totalMilestones = schedule.items.filter((item) => item.isMilestone).length;
   const roadmapMilestones = schedule.items.filter((item) => item.roadmapMilestone).length;
-  const critical = schedule.items.filter((item) => item.isCritical).length;
   const delayed = schedule.items.filter((item) => item.delayDays && item.delayDays > 0).length;
+  const latestWeekly = latestWeeklySummary(tracker);
+  const reportDate = latestWeekly?.meetingDate ?? latestWeekly?.weekEnding ?? new Date().toISOString();
   const cards = [
     ["Programme start", formatDate(schedule.startDate)],
     ["Programme finish", formatDate(schedule.finishDate)],
-    ["Status date", formatDate(schedule.statusDate)],
+    ["Report date", formatDate(reportDate)],
+    ["Schedule status", formatDate(schedule.statusDate)],
     ["Total tasks", schedule.items.length.toString()],
     ["Milestones", totalMilestones.toString()],
     ["Roadmap", roadmapMilestones.toString()],
-    ["Critical", critical.toString()],
     ["Delayed", delayed.toString()],
   ];
   return (
@@ -521,7 +522,11 @@ function itemImportance(item: ProgrammeItem): number {
 function latestWeeklySummary(tracker?: TrackerData) {
   return tracker?.weeklySummaries
     .slice()
-    .sort((a, b) => (parseDate(b.weekEnding)?.getTime() ?? 0) - (parseDate(a.weekEnding)?.getTime() ?? 0))[0];
+    .sort((a, b) => {
+      const aDate = parseDate(a.meetingDate) ?? parseDate(a.weekEnding) ?? parseDate(a.lastUpdated);
+      const bDate = parseDate(b.meetingDate) ?? parseDate(b.weekEnding) ?? parseDate(b.lastUpdated);
+      return (bDate?.getTime() ?? 0) - (aDate?.getTime() ?? 0);
+    })[0];
 }
 
 function isCompleteStatus(status?: string): boolean {
@@ -1346,10 +1351,18 @@ function WeeklyExecutiveStatusView({
     .sort((a, b) => bySoonest(a.decisionRequiredBy ?? a.decisionDate, b.decisionRequiredBy ?? b.decisionDate))
     .slice(0, 5);
   const ragTone = toneClass(weekly?.overallRag);
+  const trackerStatus = tracker
+    ? `${tracker.sourceFileName ?? "Tracker workbook"} | ${tracker.weeklySummaries.length} weekly summaries | ${tracker.risks.length} risks | ${tracker.issues.length} issues | ${tracker.actions.length} actions`
+    : "Import the latest tracker workbook to populate RAG, weekly narrative, risks, decisions and actions.";
 
   return (
     <>
       <div id="weekly-status-export" className={`weekly-status weekly-${ragTone}`}>
+        <div className={`weekly-source ${tracker && weekly ? "loaded" : "missing"}`}>
+          <span>Data source</span>
+          <strong>{trackerStatus}</strong>
+          <em>{weekly ? `Latest weekly row: ${weekly.id || "untitled"} | ${formatDate(reportingDate)} | ${weekly.overallRag ?? "RAG not set"}` : "No weekly summary row found"}</em>
+        </div>
         <header className="weekly-header">
           <div>
             <span className="snapshot-eyebrow">Weekly executive status</span>
@@ -2081,7 +2094,7 @@ function App() {
       </header>
 
       {error ? <div className="error">{error}</div> : null}
-      <SummaryBar schedule={schedule} />
+      <SummaryBar schedule={schedule} tracker={tracker} />
       <nav className="app-nav" aria-label="Application sections">
         {appPages.map((item) => (
           <button type="button" className={`${page === item.key ? "active" : ""} ${item.group}`} onClick={() => setPage(item.key)} key={item.key}>

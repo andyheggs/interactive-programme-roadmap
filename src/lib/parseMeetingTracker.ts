@@ -34,6 +34,16 @@ function excelDate(value: unknown): string | undefined {
   }
   const text = clean(value);
   if (!text) return undefined;
+  const ukDate = text.match(/^(\d{1,2})[\/.-](\d{1,2})[\/.-](\d{2,4})(?:\s|$)/);
+  if (ukDate) {
+    const year = Number(ukDate[3].length === 2 ? `20${ukDate[3]}` : ukDate[3]);
+    const month = Number(ukDate[2]);
+    const day = Number(ukDate[1]);
+    const parsed = new Date(Date.UTC(year, month - 1, day));
+    if (parsed.getUTCFullYear() === year && parsed.getUTCMonth() === month - 1 && parsed.getUTCDate() === day) {
+      return parsed.toISOString();
+    }
+  }
   const date = new Date(text);
   return Number.isNaN(date.getTime()) ? text : date.toISOString();
 }
