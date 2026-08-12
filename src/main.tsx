@@ -28,6 +28,7 @@ import {
 } from "lucide-react";
 import { exportProgrammePdf } from "./lib/exportProgrammePdf";
 import { exportElementPdf } from "./lib/exportElementPdf";
+import { exportTeamActionsPdf as exportTeamActionsA4Pdf } from "./lib/exportTeamActionsPdf";
 import { exportWeeklyStatusPdf as exportWeeklyStatusA4Pdf } from "./lib/exportWeeklyStatusPdf";
 import { parseMicrosoftProjectXml } from "./lib/parseMicrosoftProjectXml";
 import { parseMeetingTracker } from "./lib/parseMeetingTracker";
@@ -649,7 +650,7 @@ function statusLabel(item: TeamWorkItem): string {
 function combineTeamWorkItems(schedule: ProgrammeSchedule, tracker?: TrackerData): TeamWorkItem[] {
   const trackerItems: TeamWorkItem[] = (tracker?.actions ?? []).map((action) => ({
     id: `tracker-${action.id}`,
-    source: "Tracker action",
+    source: "Meeting action",
     title: action.title,
     owner: action.owner,
     stream: action.stream,
@@ -735,9 +736,14 @@ type ExecutivePath = {
   dependencies: ProgrammeItem[];
 };
 
+type ExecutivePathNode = {
+  item: ProgrammeItem;
+  depth: number;
+};
+
 type TeamWorkItem = {
   id: string;
-  source: "Tracker action" | "Project task" | "Project milestone";
+  source: "Meeting action" | "Project task" | "Project milestone";
   title: string;
   owner?: string;
   stream?: string;
@@ -766,7 +772,7 @@ function normaliseText(value?: string): string {
 
 function executiveMilestoneItems(schedule: ProgrammeSchedule): ProgrammeItem[] {
   const executive = schedule.items
-    .filter((item) => item.executiveMilestone || normaliseText(item.milestoneLevel).includes("executive"))
+    .filter((item) => item.executiveMilestone)
     .sort((a, b) => bySoonest(a.finishDate, b.finishDate));
   if (executive.length) return executive;
   return programmeMilestones(schedule).filter((item) => itemImportance(item) >= 4).slice(0, 5);
@@ -923,21 +929,83 @@ function collectPredecessorChain(outcome: ProgrammeItem, byUid: Map<string, Prog
   return [...found.values()];
 }
 
+function collectPredecessorChainWithDepth(outcome: ProgrammeItem, byUid: Map<string, ProgrammeItem>): ExecutivePathNode[] {
+  const found = new Map<string, ExecutivePathNode>();
+  const seen = new Set<string>();
+  const walk = (item: ProgrammeItem, depth: number) => {
+    if (depth > 8 || seen.has(item.uid)) return;
+    seen.add(item.uid);
+    item.predecessors.forEach((link) => {
+      if (!link.predecessorUid) return;
+      const predecessor = byUid.get(link.predecessorUid);
+      if (!predecessor) return;
+      const existing = found.get(predecessor.uid);
+      if (!existing || depth + 1 < existing.depth) found.set(predecessor.uid, { item: predecessor, depth: depth + 1 });
+      walk(predecessor, depth + 1);
+    });
+  };
+  walk(outcome, 0);
+  return [...found.values()];
+}
+
+function directPredecessors(item: ProgrammeItem, byUid: Map<string, ProgrammeItem>): ProgrammeItem[] {
+  const predecessors = item.predecessors
+    .map((link) => link.predecessorUid ? byUid.get(link.predecessorUid) : undefined)
+    .filter((predecessor): predecessor is ProgrammeItem => Boolean(predecessor?.isActive));
+  return [...new Map(predecessors.map((predecessor) => [predecessor.uid, predecessor])).values()]
+    .sort((a, b) => bySoonest(a.finishDate, b.finishDate));
+}
+
+function executivePathRelevance(node: ExecutivePathNode): number {
+  const item = node.item;
+  const level = `${item.milestoneLevel ?? ""} ${item.dependencyLevel ?? ""}`.toLowerCase();
+  const name = normaliseText(item.name);
+  let score = node.depth === 1 ? 120 : Math.max(0, 72 - node.depth * 8);
+  if (item.executiveMilestone) score += 100;
+  if (item.boardReportable) score += 70;
+  if (item.roadmapMilestone) score += 55;
+  if (level.includes("level 1")) score += 65;
+  if (level.includes("level 2")) score += 45;
+  if (level.includes("executive")) score += 60;
+  if (level.includes("board")) score += 45;
+  if (level.includes("roadmap")) score += 35;
+  [
+    "approved",
+    "approval",
+    "consultation period closed",
+    "consultation response",
+    "contract signed",
+    "contract negotiations",
+    "companies registry",
+    "registrar employed",
+    "platform ready",
+    "readiness",
+    "go live",
+    "ready for approval",
+    "submitted to dfe board",
+  ].forEach((keyword) => {
+    if (name.includes(keyword)) score += 28;
+  });
+  if (item.isSummary) score -= 120;
+  if (!item.isActive) score -= 120;
+  return score;
+}
+
 function collectPredecessorDependencies(outcome: ProgrammeItem, byUid: Map<string, ProgrammeItem>): ProgrammeItem[] {
-  return collectPredecessorChain(outcome, byUid).filter(importantExecutiveDependency);
+  const chain = collectPredecessorChainWithDepth(outcome, byUid);
+  const relevant = chain
+    .filter((node) => node.depth === 1 || executivePathRelevance(node) >= 82)
+    .sort((a, b) => executivePathRelevance(b) - executivePathRelevance(a) || bySoonest(a.item.finishDate, b.item.finishDate))
+    .slice(0, 7)
+    .sort((a, b) => bySoonest(a.item.finishDate, b.item.finishDate) || a.depth - b.depth);
+  return relevant.map((node) => node.item);
 }
 
 function executiveDependencyPaths(schedule: ProgrammeSchedule): ExecutivePath[] {
-  const outcomes = executiveMilestoneItems(schedule).slice(0, 7);
+  const outcomes = executiveMilestoneItems(schedule).slice(0, 5);
   const byUid = new Map(schedule.items.map((item) => [item.uid, item]));
   return outcomes.map((outcome) => {
-    const predecessors = collectPredecessorDependencies(outcome, byUid);
-    const combined = new Map<string, ProgrammeItem>();
-    predecessors.forEach((item) => combined.set(item.uid, item));
-    const priorityDependencies = [...combined.values()]
-      .sort((a, b) => executiveDependencyScore(b) - executiveDependencyScore(a) || bySoonest(a.finishDate, b.finishDate))
-      .slice(0, 5);
-    const dependencies = priorityDependencies.sort((a, b) => bySoonest(a.finishDate, b.finishDate) || executiveDependencyScore(b) - executiveDependencyScore(a));
+    const dependencies = collectPredecessorDependencies(outcome, byUid);
     return { outcome, dependencies };
   });
 }
@@ -1146,61 +1214,29 @@ function ExecutiveSnapshotView({
   dateWindow: DateWindow;
   onExportSnapshotPdf?: () => void;
 }) {
-  const weekly = latestWeeklySummary(tracker);
   const reportingDate = new Date().toISOString();
   const forwardWindow = { ...dateWindow, start: dateWindow.start ?? parseDate(reportingDate) };
   const paths = executiveDependencyPaths(schedule)
-    .filter((path) => isForwardLookingExecutiveItem(path.outcome, forwardWindow))
-    .map((path) => ({
-      ...path,
-      dependencies: path.dependencies.filter((item) => isForwardLookingExecutiveItem(item, forwardWindow)),
-    }));
+    .filter((path) => isForwardLookingExecutiveItem(path.outcome, forwardWindow));
   const deliveredMilestones = programmeMilestones(schedule)
     .filter((item) => isHighLevelMilestone(item) && isHistoricDeliveredItem(item, forwardWindow))
     .sort((a, b) => (parseDate(b.finishDate)?.getTime() ?? 0) - (parseDate(a.finishDate)?.getTime() ?? 0));
   const [executiveMode, setExecutiveMode] = useState<"upcoming" | "delivered">("upcoming");
   const [selectedUid, setSelectedUid] = useState(paths[0]?.outcome.uid ?? "");
+  const [expandedUid, setExpandedUid] = useState("");
+  const byUid = useMemo(() => new Map(schedule.items.map((item) => [item.uid, item])), [schedule.items]);
   useEffect(() => {
     if (!paths.length) {
       if (selectedUid) setSelectedUid("");
+      if (expandedUid) setExpandedUid("");
       return;
     }
     if (!paths.some((path) => path.outcome.uid === selectedUid)) setSelectedUid(paths[0].outcome.uid);
-  }, [paths, selectedUid]);
+    if (expandedUid && !byUid.has(expandedUid)) setExpandedUid("");
+  }, [byUid, expandedUid, paths, selectedUid]);
   const selectedPath = paths.find((path) => path.outcome.uid === selectedUid) ?? paths[0];
   const outcomes = paths.map((path) => path.outcome);
-  const programmeTone = toneClass(weekly?.overallRag);
-  const confidenceTone = recoveryConfidence(weekly, outcomes);
-  const byUid = new Map(schedule.items.map((item) => [item.uid, item]));
-  const programmeStatusText = weekly?.overallRag ? weekly.overallRag.toUpperCase() : "Not set";
-  const programmeReason = normaliseText(weekly?.overallRag).includes("red")
-    ? "Original July 2026 programme commitment missed"
-    : weekly?.ragRationale ?? "Import the latest meeting tracker to populate the current programme position.";
-  const decisions = sortFlaggedFirst(openDecisions(tracker)).slice(0, 4);
-  const keyEnablers = [...new Map(paths.flatMap((path) => collectPredecessorChain(path.outcome, byUid)).map((item) => [item.uid, item])).values()]
-    .filter((item) => !item.executiveMilestone && !item.isSummary && item.isActive && isForwardLookingExecutiveItem(item, forwardWindow) && executiveEnablerScore(item) > 0)
-    .sort((a, b) => bySoonest(a.finishDate, b.finishDate) || executiveEnablerScore(b) - executiveEnablerScore(a))
-    .slice(0, 5);
-  const watchlistItems = sortFlaggedFirst([
-    ...openRisks(tracker)
-      .filter((risk) => risk.dashboardFlag || isRedOrAmber(risk.rag))
-      .map((risk) => ({ id: `risk-${risk.id}`, title: risk.title, meta: risk.rag ?? risk.status ?? "Risk", dashboardFlag: risk.dashboardFlag })),
-    ...openIssues(tracker)
-      .filter((issue) => issue.dashboardFlag || isRedOrAmber(issue.rag) || isRedOrAmber(issue.priority))
-      .map((issue) => ({ id: `issue-${issue.id}`, title: issue.title, meta: issue.rag ?? issue.priority ?? issue.status ?? "Issue", dashboardFlag: issue.dashboardFlag })),
-  ]).slice(0, 5);
-  const attentionItems = [
-    weekly?.askSteerNeeded ? { id: "ask", title: weekly.askSteerNeeded, meta: "Current ask" } : undefined,
-    weekly?.mainBlocker ? { id: "blocker", title: weekly.mainBlocker, meta: "Main blocker" } : undefined,
-    ...decisions.map((decision) => ({
-      id: `decision-${decision.id}`,
-      title: decision.title,
-      meta: decision.decisionMaker ?? decision.owner ?? decision.status ?? "Decision",
-    })),
-  ]
-    .filter((item): item is { id: string; title: string; meta: string } => Boolean(item?.title))
-    .filter((item, index, items) => items.findIndex((candidate) => candidate.title === item.title) === index)
-    .slice(0, 5);
+  const toggleExpanded = (uid: string) => setExpandedUid((current) => current === uid ? "" : uid);
 
   return (
     <>
@@ -1215,15 +1251,6 @@ function ExecutiveSnapshotView({
             </div>
             <strong>Reporting date: {formatDate(reportingDate)}</strong>
           </header>
-
-          <div className="exec-position-strip">
-            <span className={`exec-status-badge ${programmeTone}`}>{programmeStatusText}</span>
-            <p>{programmeReason}</p>
-            <div>
-              <span>Recovery confidence</span>
-              <strong className={`exec-text-${confidenceTone}`}>{executiveToneLabels[confidenceTone]}</strong>
-            </div>
-          </div>
 
           <div className="exec-view-tabs" role="tablist" aria-label="Executive roadmap view">
             <button
@@ -1250,7 +1277,7 @@ function ExecutiveSnapshotView({
             <>
           <div className="exec-section-label">
             <h3>Executive milestones</h3>
-            <p>Highest-level delivery outcomes and confidence in the revised dates.</p>
+            <p>Only tasks explicitly marked as Executive Milestones in the imported Project plan.</p>
           </div>
           <div className="exec-outcome-cards" aria-label="Executive milestones">
             {outcomes.map((item) => {
@@ -1280,11 +1307,17 @@ function ExecutiveSnapshotView({
           </div>
 
           <div className="exec-section-label">
-            <h3>Executive dependency roadmap</h3>
-            <p>Significant schedule dependencies behind each executive milestone.</p>
+            <h3>Milestone dependency pathways</h3>
+            <p>Key predecessor steps connected through Microsoft Project predecessor links.</p>
           </div>
           <div className="exec-pathways">
-            {paths.length ? paths.map((path) => (
+            {paths.length ? paths.map((path) => {
+              const pathChain = collectPredecessorChain(path.outcome, byUid);
+              const expandedItem = path.outcome.uid === selectedPath?.outcome.uid
+                ? [path.outcome, ...path.dependencies, ...pathChain].find((item) => item.uid === expandedUid)
+                : undefined;
+              const expandedPredecessors = expandedItem ? directPredecessors(expandedItem, byUid).filter((item) => !item.isSummary) : [];
+              return (
               <article className={`exec-path ${path.outcome.uid === selectedPath?.outcome.uid ? "selected" : ""}`} key={path.outcome.uid}>
                 <h3>{path.outcome.targetMilestone || path.outcome.name}</h3>
                 <div className="exec-path-grid">
@@ -1292,79 +1325,85 @@ function ExecutiveSnapshotView({
                     {path.dependencies.length ? path.dependencies.map((item) => {
                       const tone = executiveTone(item);
                       return (
-                        <div className="exec-node" key={item.uid}>
+                        <button
+                          className={`exec-node ${expandedUid === item.uid ? "expanded" : ""}`}
+                          key={item.uid}
+                          type="button"
+                          onClick={() => {
+                            setSelectedUid(path.outcome.uid);
+                            toggleExpanded(item.uid);
+                          }}
+                          aria-expanded={expandedUid === item.uid}
+                        >
                           <span>{formatDate(item.finishDate)}</span>
                           <i className={`${tone} ${item.executiveMilestone ? "executive" : ""}`} />
                           <strong>{item.name}</strong>
-                        </div>
+                          <small>{expandedUid === item.uid ? "Hide detail" : "Show detail"}</small>
+                        </button>
                       );
                     }) : (
                       <div className="exec-node empty">
-                        <span>Not tagged</span>
+                        <span>No links</span>
                         <i className="grey" />
-                        <strong>No significant dependencies tagged in the plan yet</strong>
+                        <strong>No predecessor links found in the Project plan</strong>
                       </div>
                     )}
                     <ChevronRight className="exec-path-arrow" size={26} />
                   </div>
-                  <button className={`exec-outcome-detail ${executiveTone(path.outcome)}`} type="button" onClick={() => setSelectedUid(path.outcome.uid)}>
+                  <button
+                    className={`exec-outcome-detail ${executiveTone(path.outcome)} ${expandedUid === path.outcome.uid ? "expanded" : ""}`}
+                    type="button"
+                    onClick={() => {
+                      setSelectedUid(path.outcome.uid);
+                      toggleExpanded(path.outcome.uid);
+                    }}
+                    aria-expanded={expandedUid === path.outcome.uid}
+                  >
                     <span>{executiveToneLabels[executiveTone(path.outcome)]}</span>
                     <strong>{path.outcome.name}</strong>
                     <em>{formatDate(path.outcome.finishDate)}</em>
+                    <small>{expandedUid === path.outcome.uid ? "Hide predecessor detail" : "Show predecessor detail"}</small>
                   </button>
                 </div>
+                {expandedItem ? (
+                  <div className="exec-drilldown-panel">
+                    <div>
+                      <span>Expanded pathway item</span>
+                      <h4>{expandedItem.name}</h4>
+                      <p>{formatDate(expandedItem.finishDate)} · {expandedItem.stream ?? expandedItem.milestoneLevel ?? expandedItem.dependencyLevel ?? "Project plan item"}</p>
+                    </div>
+                    <div className="exec-drilldown-list">
+                      {expandedPredecessors.length ? expandedPredecessors.map((item) => {
+                        const tone = executiveTone(item);
+                        return (
+                          <button
+                            className="exec-drilldown-card"
+                            type="button"
+                            key={item.uid}
+                            onClick={() => {
+                              setSelectedUid(path.outcome.uid);
+                              toggleExpanded(item.uid);
+                            }}
+                          >
+                            <span>{formatDate(item.finishDate)}</span>
+                            <strong>{item.name}</strong>
+                            <em className={tone}>{executiveToneLabels[tone]}</em>
+                          </button>
+                        );
+                      }) : (
+                        <p>No earlier predecessor items are linked to this item in the Project plan.</p>
+                      )}
+                    </div>
+                  </div>
+                ) : null}
               </article>
-            )) : (
+              );
+            }) : (
               <article className="exec-empty-state">
                 <h3>No executive milestones found</h3>
                 <p>Flag the high-level outcomes in Microsoft Project using the Executive Milestones field, then re-import the XML.</p>
               </article>
             )}
-          </div>
-
-          <div className="exec-section-label">
-            <h3>Programme watchlist</h3>
-            <p>Programme-level items from the schedule and meeting tracker that need attention now.</p>
-          </div>
-          <div className="exec-watchlist-grid">
-            <article className="exec-watch-card">
-              <h3>Next key enablers</h3>
-              <div className="exec-watch-list gates">
-                {keyEnablers.slice(0, 5).map((item) => (
-                  <div key={item.uid}>
-                    <span className="exec-date-chip">{formatDate(item.finishDate).replace(` ${parseDate(item.finishDate)?.getFullYear() ?? ""}`, "")}</span>
-                    <strong>{item.name}</strong>
-                  </div>
-                ))}
-                {!keyEnablers.length ? <p>No executive milestone enablers found in the selected date window.</p> : null}
-              </div>
-            </article>
-            <article className="exec-watch-card">
-              <h3>Top risks / issues</h3>
-              <div className="exec-watch-list">
-                {watchlistItems.map((item) => (
-                  <div key={item.id}>
-                    <span className="exec-alert-dot amber" />
-                    <strong>{item.title}</strong>
-                    <em>{item.meta}</em>
-                  </div>
-                ))}
-                {!watchlistItems.length ? <p>No dashboard or red/amber risks or issues are currently flagged.</p> : null}
-              </div>
-            </article>
-            <article className="exec-watch-card">
-              <h3>Executive attention</h3>
-              <div className="exec-watch-list">
-                {attentionItems.map((item) => (
-                  <div key={item.id}>
-                    <span className="exec-alert-dot red" />
-                    <strong>{item.title}</strong>
-                    <em>{item.meta}</em>
-                  </div>
-                ))}
-                {!attentionItems.length ? <p>No current asks, blockers or open decisions are currently flagged.</p> : null}
-              </div>
-            </article>
           </div>
             </>
           ) : (
@@ -1647,7 +1686,7 @@ function TeamActionTrackerView({
   schedule: ProgrammeSchedule;
   tracker?: TrackerData;
   dateWindow: DateWindow;
-  onExportPdf: () => void;
+  onExportPdf: (items: TeamWorkItem[]) => void;
 }) {
   const [statusTab, setStatusTab] = useState<"open" | "due-soon" | "overdue" | "blocked" | "completed" | "all">("open");
   const [owner, setOwner] = useState("all");
@@ -1763,9 +1802,9 @@ function TeamActionTrackerView({
         </section>
       </div>
       <div className="snapshot-actions">
-        <button className="download-action" type="button" onClick={onExportPdf}>
+        <button className="download-action" type="button" onClick={() => onExportPdf(filtered)}>
           <Download size={15} />
-          Download Actions PDF
+          Download A4 Actions PDF
         </button>
         <button className="download-action" type="button" onClick={() => downloadTeamActionsCsv(filtered, schedule)}>
           <Download size={15} />
@@ -1959,7 +1998,7 @@ function ReportingContent({
   onExportJson: () => void;
   onExportSnapshotPdf: () => void;
   onExportWeeklyStatusPdf: () => void;
-  onExportTeamActionsPdf: () => void;
+  onExportTeamActionsPdf: (items: TeamWorkItem[]) => void;
 }) {
   if (page === "home") return <HomeDashboard schedule={schedule} tracker={tracker} dateWindow={dateWindow} />;
   if (page === "ceo") return <ExecutiveSnapshotView schedule={schedule} tracker={tracker} dateWindow={dateWindow} onExportSnapshotPdf={onExportSnapshotPdf} />;
@@ -2154,15 +2193,16 @@ function App() {
     }
   }
 
-  async function exportTeamActionsPdf() {
+  async function exportTeamActionsPdf(items: TeamWorkItem[]) {
     setError(undefined);
     try {
-      const element = document.getElementById("team-actions-export");
-      if (!element) throw new Error("Open the Team Action Tracker page before exporting actions.");
-      await exportElementPdf({
-        element,
-        title: schedule.title,
-        fileNameSuffix: "team-actions",
+      await exportTeamActionsA4Pdf({
+        schedule,
+        dateWindow,
+        items: items.map((item) => ({
+          ...item,
+          displayStatus: statusLabel(item),
+        })),
       });
     } catch (err) {
       setError(err instanceof Error ? err.message : "The Team Action Tracker PDF could not be generated.");
