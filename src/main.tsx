@@ -1795,18 +1795,60 @@ function predecessorText(item: ProgrammeItem, byUid: Map<string, ProgrammeItem>)
   return values.length ? values.join(", ") : "-";
 }
 
+const GANTT_ROW_HEIGHT = 38;
+const MAX_GANTT_ARROWS = 320;
+
+type GanttLinkPath = {
+  id: string;
+  fromUid: string;
+  toUid: string;
+  path: string;
+};
+
+function ganttDependencyPaths(visibleItems: ProgrammeItem[], byUid: Map<string, ProgrammeItem>, bounds: ReturnType<typeof timelineBounds>): GanttLinkPath[] {
+  const visibleIndex = new Map(visibleItems.map((item, index) => [item.uid, index]));
+  const paths: GanttLinkPath[] = [];
+
+  visibleItems.forEach((item, toIndex) => {
+    item.predecessors.forEach((link) => {
+      if (!link.predecessorUid) return;
+      const predecessor = byUid.get(link.predecessorUid);
+      const fromIndex = predecessor ? visibleIndex.get(predecessor.uid) : undefined;
+      if (!predecessor || fromIndex === undefined) return;
+
+      const fromX = positionFor(predecessor.finishDate ?? predecessor.startDate, bounds);
+      const toX = positionFor(item.isMilestone ? item.finishDate : item.startDate ?? item.finishDate, bounds);
+      const fromY = fromIndex * GANTT_ROW_HEIGHT + (GANTT_ROW_HEIGHT / 2);
+      const toY = toIndex * GANTT_ROW_HEIGHT + (GANTT_ROW_HEIGHT / 2);
+      const bendX = clamp(Math.max(fromX, toX) + 2.5, 1.5, 98.5);
+      const targetX = clamp(toX - 0.7, 0.8, 99.2);
+
+      paths.push({
+        id: `${predecessor.uid}-${item.uid}-${paths.length}`,
+        fromUid: predecessor.uid,
+        toUid: item.uid,
+        path: `M ${fromX.toFixed(2)} ${fromY.toFixed(1)} L ${bendX.toFixed(2)} ${fromY.toFixed(1)} L ${bendX.toFixed(2)} ${toY.toFixed(1)} L ${targetX.toFixed(2)} ${toY.toFixed(1)}`,
+      });
+    });
+  });
+
+  return paths;
+}
+
 function GanttChart({
   schedule,
   items,
   selected,
   onSelect,
   dateWindow,
+  showArrows,
 }: {
   schedule: ProgrammeSchedule;
   items: ProgrammeItem[];
   selected?: ProgrammeItem;
   onSelect: (item: ProgrammeItem) => void;
   dateWindow: DateWindow;
+  showArrows: boolean;
 }) {
   const visibleItems = items.slice(0, 220);
   const bounds = useMemo(() => timelineBounds(visibleItems.length ? visibleItems : schedule.items, schedule, dateWindow), [dateWindow, schedule, visibleItems]);
@@ -1815,12 +1857,17 @@ function GanttChart({
   const byUid = useMemo(() => new Map(schedule.items.map((item) => [item.uid, item])), [schedule.items]);
   const selectedPredecessors = immediatePredecessors(selected, byUid);
   const predecessorIds = new Set(selectedPredecessors.map((item) => item.uid));
+  const allDependencyPaths = useMemo(() => ganttDependencyPaths(visibleItems, byUid, bounds), [bounds, byUid, visibleItems]);
+  const dependencyPaths = allDependencyPaths.slice(0, MAX_GANTT_ARROWS);
+  const hiddenArrowCount = Math.max(0, allDependencyPaths.length - dependencyPaths.length);
+  const chartHeight = Math.max(GANTT_ROW_HEIGHT, visibleItems.length * GANTT_ROW_HEIGHT);
   return (
     <section className="gantt-shell">
       <div className="gantt-summary">
         <strong>{visibleItems.length}</strong> items shown
         {items.length > visibleItems.length ? <span> from {items.length} dated items</span> : null}
         <span>{dateWindow.label}</span>
+        {showArrows ? <span>{dependencyPaths.length} dependency arrows{hiddenArrowCount ? ` shown, ${hiddenArrowCount} hidden for readability` : ""}</span> : null}
       </div>
       <div className="gantt-legend">
         <span><i className="gantt-key summary" />Summary</span>
@@ -1830,6 +1877,7 @@ function GanttChart({
         <span><i className="gantt-key late" />Late / blocked</span>
         <span><Diamond size={13} />Milestone</span>
         <span><i className="gantt-key baseline" />Baseline finish</span>
+        <span><i className="gantt-key arrow" />Dependency arrow</span>
         <span><i className="gantt-key dependency" />Selected predecessor</span>
       </div>
       <div className="msp-gantt" style={{ ["--status-left" as string]: `${statusMarker}%` }}>
@@ -1893,6 +1941,35 @@ function GanttChart({
             </React.Fragment>
           );
         })}
+        {showArrows && dependencyPaths.length ? (
+          <svg
+            className="gantt-link-layer"
+            style={{ gridColumn: 8, gridRow: `2 / span ${Math.max(1, visibleItems.length)}` }}
+            viewBox={`0 0 100 ${chartHeight}`}
+            preserveAspectRatio="none"
+            aria-hidden="true"
+          >
+            <defs>
+              <marker id="gantt-arrow-head" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="5" markerHeight="5" orient="auto-start-reverse">
+                <path d="M 0 0 L 8 4 L 0 8 z" fill="#2d5366" />
+              </marker>
+              <marker id="gantt-arrow-head-selected" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="5" markerHeight="5" orient="auto-start-reverse">
+                <path d="M 0 0 L 8 4 L 0 8 z" fill="#8f5c00" />
+              </marker>
+            </defs>
+            {dependencyPaths.map((link) => {
+              const isSelectedLink = selected?.uid === link.fromUid || selected?.uid === link.toUid;
+              return (
+                <path
+                  key={link.id}
+                  className={isSelectedLink ? "selected" : undefined}
+                  d={link.path}
+                  markerEnd={isSelectedLink ? "url(#gantt-arrow-head-selected)" : "url(#gantt-arrow-head)"}
+                />
+              );
+            })}
+          </svg>
+        ) : null}
         {!visibleItems.length ? (
           <div className="gantt-empty">No dated Project rows found for this Gantt level and date window.</div>
         ) : null}
@@ -1904,6 +1981,7 @@ function GanttChart({
 function GanttView({ schedule, dateWindow, selected, onSelect }: { schedule: ProgrammeSchedule; dateWindow: DateWindow; selected?: ProgrammeItem; onSelect: (item: ProgrammeItem) => void }) {
   const [level, setLevel] = useState<GanttLevel>("executive");
   const [exportError, setExportError] = useState<string>();
+  const [showArrows, setShowArrows] = useState(true);
   const sections = useMemo(() => ganttLevels.map((entry) => ({
     key: entry.key,
     label: entry.label,
@@ -1937,6 +2015,10 @@ function GanttView({ schedule, dateWindow, selected, onSelect }: { schedule: Pro
           ))}
         </div>
         <div className="gantt-downloads">
+          <label className="check gantt-arrow-toggle">
+            <input type="checkbox" checked={showArrows} onChange={(event) => setShowArrows(event.target.checked)} />
+            Show dependency arrows
+          </label>
           <button className="download-action" type="button" onClick={() => exportSections([{ label: active.label, items: active.items }])}>
             <Download size={15} />
             Download current level
@@ -1952,7 +2034,7 @@ function GanttView({ schedule, dateWindow, selected, onSelect }: { schedule: Pro
         <strong>{active.label}</strong>
         <span>{active.description}</span>
       </section>
-      <GanttChart schedule={schedule} items={active.items} selected={selected} onSelect={onSelect} dateWindow={dateWindow} />
+      <GanttChart schedule={schedule} items={active.items} selected={selected} onSelect={onSelect} dateWindow={dateWindow} showArrows={showArrows} />
     </>
   );
 }

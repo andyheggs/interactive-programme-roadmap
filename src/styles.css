@@ -1923,6 +1923,35 @@ body.executive-export-light .executive-roadmap {
 .gantt-key.late { background: #b33a32; }
 .gantt-key.baseline { width: 3px; height: 16px; background: var(--muted); }
 .gantt-key.dependency { width: 18px; height: 3px; background: #9bcfff; box-shadow: 0 0 0 3px rgba(61, 120, 169, 0.16); }
+.gantt-key.arrow {
+  position: relative;
+  width: 22px;
+  height: 3px;
+  border-radius: 0;
+  background: #2d5366;
+}
+.gantt-key.arrow::after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  right: -1px;
+  width: 0;
+  height: 0;
+  border-top: 5px solid transparent;
+  border-bottom: 5px solid transparent;
+  border-left: 7px solid #2d5366;
+  transform: translateY(-50%);
+}
+.gantt-arrow-toggle {
+  min-height: 36px;
+  padding: 7px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--text);
+  background: var(--surface);
+  font-size: 0.82rem;
+  font-weight: 900;
+}
 .msp-gantt {
   position: relative;
   display: grid;
@@ -2062,10 +2091,32 @@ body.executive-export-light .executive-roadmap {
     linear-gradient(90deg, var(--border-soft) 1px, transparent 1px) 0 0 / 10% 100%,
     var(--surface-subtle);
 }
+.gantt-link-layer {
+  z-index: 4;
+  align-self: stretch;
+  justify-self: stretch;
+  width: 100%;
+  height: 100%;
+  min-width: 900px;
+  overflow: visible;
+  pointer-events: none;
+}
+.gantt-link-layer path {
+  fill: none;
+  stroke: rgba(45, 83, 102, 0.84);
+  stroke-linecap: square;
+  stroke-linejoin: round;
+  stroke-width: 1.1;
+  vector-effect: non-scaling-stroke;
+}
+.gantt-link-layer path.selected {
+  stroke: #8f5c00;
+  stroke-width: 1.5;
+}
 .gantt-bar {
   position: absolute;
   top: 12px;
-  z-index: 1;
+  z-index: 2;
   min-width: 10px;
   height: 14px;
   border: 0;
@@ -2145,7 +2196,8 @@ body.executive-export-light .executive-roadmap {
     grid-template-columns: 56px 260px 96px 96px 84px 90px 110px minmax(760px, 1fr);
   }
   .msp-chart-row,
-  .msp-scale { min-width: 760px; }
+  .msp-scale,
+  .gantt-link-layer { min-width: 760px; }
   .snapshot-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .snapshot-hero { grid-template-columns: 1fr; }
   .exec-outcome-cards { grid-template-columns: repeat(2, minmax(0, 1fr)); }
@@ -2187,7 +2239,8 @@ body.executive-export-light .executive-roadmap {
     grid-template-columns: 52px 240px 92px 92px 80px 84px 104px minmax(680px, 1fr);
   }
   .msp-chart-row,
-  .msp-scale { min-width: 680px; }
+  .msp-scale,
+  .gantt-link-layer { min-width: 680px; }
   .snapshot-kpis,
   .weekly-kpis,
   .snapshot-focus-grid,
