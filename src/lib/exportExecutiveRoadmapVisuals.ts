@@ -208,24 +208,39 @@ function drawPathRow(doc: JsPDF, title: string, items: ProgrammeItem[], y: numbe
 export async function exportExecutiveRoadmapImage(element: HTMLElement, schedule: ProgrammeSchedule) {
   const { default: html2canvas } = await import("html2canvas");
   document.body.classList.add("executive-export-light");
+  document.body.classList.add("snapshot-exporting");
   try {
+    const width = Math.max(1180, element.scrollWidth, element.offsetWidth);
+    const height = Math.max(element.scrollHeight, element.offsetHeight);
+    const maxCanvasArea = 32_000_000;
+    const preferredScale = 2;
+    const scale = Math.min(preferredScale, Math.sqrt(maxCanvasArea / Math.max(1, width * height)));
     const canvas = await html2canvas(element, {
       backgroundColor: "#ffffff",
-      scale: 3,
+      scale: Math.max(1, scale),
       useCORS: true,
-      windowWidth: Math.max(1440, element.scrollWidth),
-      width: element.scrollWidth,
-      height: element.scrollHeight,
+      windowWidth: Math.max(1440, width),
+      width,
+      height,
+      scrollX: 0,
+      scrollY: 0,
+      onclone: (clonedDocument) => {
+        clonedDocument.body.classList.add("executive-export-light", "snapshot-exporting");
+      },
     });
-    const url = canvas.toDataURL("image/png");
+    const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, "image/png"));
+    if (!blob) throw new Error("The roadmap image was too large to render. Try a shorter date window or export the poster PDF.");
+    const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
     link.href = url;
     link.download = `${fileSlug(schedule.title)}-executive-roadmap-snapshot.png`;
     document.body.appendChild(link);
     link.click();
     link.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
   } finally {
     document.body.classList.remove("executive-export-light");
+    document.body.classList.remove("snapshot-exporting");
   }
 }
 

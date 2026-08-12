@@ -1266,15 +1266,15 @@ body.executive-export-light .executive-roadmap {
   margin-top: 14px;
   padding: 12px;
   border: 1px solid var(--exec-line);
-  border-left: 4px solid var(--tone);
+  border-left: 4px solid var(--exec-grey);
   border-radius: 8px;
-  background: color-mix(in srgb, var(--tone) 9%, var(--exec-panel));
+  background: rgba(126, 140, 132, 0.1);
 }
-.exec-rag-explainer.green { --tone: var(--exec-green); }
-.exec-rag-explainer.blue { --tone: var(--exec-blue); }
-.exec-rag-explainer.amber { --tone: var(--exec-amber); }
-.exec-rag-explainer.red { --tone: var(--exec-red); }
-.exec-rag-explainer.grey { --tone: var(--exec-grey); }
+.exec-rag-explainer.green { border-left-color: var(--exec-green); background: rgba(46, 125, 85, 0.1); }
+.exec-rag-explainer.blue { border-left-color: var(--exec-blue); background: rgba(61, 120, 169, 0.1); }
+.exec-rag-explainer.amber { border-left-color: var(--exec-amber); background: rgba(255, 138, 0, 0.1); }
+.exec-rag-explainer.red { border-left-color: var(--exec-red); background: rgba(179, 58, 50, 0.1); }
+.exec-rag-explainer.grey { border-left-color: var(--exec-grey); background: rgba(126, 140, 132, 0.1); }
 .exec-rag-explainer strong {
   display: block;
   color: var(--exec-text);
