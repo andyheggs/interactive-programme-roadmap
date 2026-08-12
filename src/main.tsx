@@ -1770,29 +1770,58 @@ function ganttScaleTicks(bounds: ReturnType<typeof timelineBounds>) {
   return ticks;
 }
 
+function immediatePredecessors(item: ProgrammeItem | undefined, byUid: Map<string, ProgrammeItem>): ProgrammeItem[] {
+  if (!item) return [];
+  return uniqueItems(item.predecessors
+    .map((link) => link.predecessorUid ? byUid.get(link.predecessorUid) : undefined)
+    .filter((entry): entry is ProgrammeItem => Boolean(entry?.isActive)))
+    .sort((a, b) => bySoonest(a.finishDate, b.finishDate));
+}
+
+function immediateSuccessors(item: ProgrammeItem | undefined, schedule: ProgrammeSchedule): ProgrammeItem[] {
+  if (!item) return [];
+  const linkedBySuccessor = item.successors
+    .map((link) => link.successorUid ? schedule.items.find((entry) => entry.uid === link.successorUid) : undefined)
+    .filter((entry): entry is ProgrammeItem => Boolean(entry?.isActive));
+  const linkedByPredecessor = schedule.items
+    .filter((entry) => entry.isActive && entry.predecessors.some((link) => link.predecessorUid === item.uid));
+  return uniqueItems([...linkedBySuccessor, ...linkedByPredecessor])
+    .sort((a, b) => bySoonest(a.finishDate, b.finishDate));
+}
+
 function GanttChart({
   schedule,
   items,
   selected,
   onSelect,
   dateWindow,
+  showDependencies,
 }: {
   schedule: ProgrammeSchedule;
   items: ProgrammeItem[];
   selected?: ProgrammeItem;
   onSelect: (item: ProgrammeItem) => void;
   dateWindow: DateWindow;
+  showDependencies: boolean;
 }) {
   const visibleItems = items.slice(0, 220);
   const bounds = useMemo(() => timelineBounds(visibleItems.length ? visibleItems : schedule.items, schedule, dateWindow), [dateWindow, schedule, visibleItems]);
   const ticks = useMemo(() => ganttScaleTicks(bounds), [bounds]);
   const statusMarker = positionFor(schedule.statusDate, bounds);
+  const byUid = useMemo(() => new Map(schedule.items.map((item) => [item.uid, item])), [schedule.items]);
+  const activeItem = visibleItems.find((item) => item.uid === selected?.uid);
+  const selectedPredecessors = immediatePredecessors(activeItem, byUid);
+  const selectedSuccessors = immediateSuccessors(activeItem, schedule);
+  const predecessorIds = new Set(selectedPredecessors.map((item) => item.uid));
+  const successorIds = new Set(selectedSuccessors.map((item) => item.uid));
+  const selectedLinkedCount = selectedPredecessors.length + selectedSuccessors.length;
   return (
     <section className="gantt-shell">
       <div className="gantt-summary">
         <strong>{visibleItems.length}</strong> items shown
         {items.length > visibleItems.length ? <span> from {items.length} dated items</span> : null}
         <span>{dateWindow.label}</span>
+        {showDependencies ? <span>{selectedLinkedCount} links for selected item</span> : null}
       </div>
       <div className="gantt-legend">
         <span><i className="gantt-key summary" />Summary</span>
@@ -1802,6 +1831,7 @@ function GanttChart({
         <span><i className="gantt-key late" />Late / blocked</span>
         <span><Diamond size={13} />Milestone</span>
         <span><i className="gantt-key baseline" />Baseline finish</span>
+        <span><i className="gantt-key dependency" />Selected dependency</span>
       </div>
       <div className="gantt-board" style={{ ["--status-left" as string]: `${statusMarker}%` }}>
         <div className="gantt-label-head">Item</div>
@@ -1817,18 +1847,28 @@ function GanttChart({
           const width = Math.max(0.9, Math.abs(finish - start));
           const baseline = positionFor(item.baselineFinish, bounds);
           const tone = ganttTone(item);
+          const isSelected = selected?.uid === item.uid;
+          const isPredecessor = showDependencies && predecessorIds.has(item.uid);
+          const isSuccessor = showDependencies && successorIds.has(item.uid);
+          const rowDeps = showDependencies ? immediatePredecessors(item, byUid).filter((dependency) => visibleItems.some((visible) => visible.uid === dependency.uid)) : [];
           return (
             <React.Fragment key={item.uid}>
               <button
-                className={`gantt-label ${selected?.uid === item.uid ? "selected" : ""}`}
+                className={`gantt-label ${isSelected ? "selected" : ""} ${isPredecessor ? "dependency-predecessor" : ""} ${isSuccessor ? "dependency-successor" : ""}`}
                 type="button"
                 onClick={() => onSelect(item)}
               >
                 <span>{item.stream ?? item.roadmapView ?? "No stream"}</span>
                 <strong>{item.name}</strong>
               </button>
-              <div className="gantt-row">
+              <div className={`gantt-row ${isSelected ? "selected" : ""} ${isPredecessor ? "dependency-predecessor" : ""} ${isSuccessor ? "dependency-successor" : ""}`}>
                 {item.baselineFinish ? <i className="gantt-baseline" style={{ left: `${baseline}%` }} /> : null}
+                {rowDeps.length ? (
+                  <span className="gantt-dependency-chip" style={{ left: `${Math.max(1, left - 5)}%` }}>
+                    <ArrowRight size={12} />
+                    {rowDeps.length}
+                  </span>
+                ) : null}
                 <button
                   className={`gantt-bar ${tone} ${item.isMilestone ? "milestone" : ""} ${item.executiveMilestone ? "executive" : ""}`}
                   type="button"
@@ -1846,12 +1886,40 @@ function GanttChart({
           <div className="gantt-empty">No dated items found for this Gantt level and date window.</div>
         ) : null}
       </div>
+      <section className="gantt-dependency-panel">
+        <div>
+          <span>Selected item</span>
+          <strong>{activeItem?.name ?? "Select a task or milestone"}</strong>
+          <em>{activeItem ? `${formatDate(activeItem.startDate)} - ${formatDate(activeItem.finishDate)}` : "Dependency detail will appear here."}</em>
+        </div>
+        <div className="gantt-dependency-column">
+          <h3>Immediate predecessors</h3>
+          {selectedPredecessors.length ? selectedPredecessors.slice(0, 6).map((item) => (
+            <button type="button" key={item.uid} onClick={() => onSelect(item)}>
+              <span>{formatDate(item.finishDate)}</span>
+              <strong>{item.name}</strong>
+              <em>{item.stream ?? item.milestoneLevel ?? item.status}</em>
+            </button>
+          )) : <p>No predecessor links found for the selected item.</p>}
+        </div>
+        <div className="gantt-dependency-column">
+          <h3>Immediate successors</h3>
+          {selectedSuccessors.length ? selectedSuccessors.slice(0, 6).map((item) => (
+            <button type="button" key={item.uid} onClick={() => onSelect(item)}>
+              <span>{formatDate(item.finishDate)}</span>
+              <strong>{item.name}</strong>
+              <em>{item.stream ?? item.milestoneLevel ?? item.status}</em>
+            </button>
+          )) : <p>No successor links found for the selected item.</p>}
+        </div>
+      </section>
     </section>
   );
 }
 
 function GanttView({ schedule, dateWindow, selected, onSelect }: { schedule: ProgrammeSchedule; dateWindow: DateWindow; selected?: ProgrammeItem; onSelect: (item: ProgrammeItem) => void }) {
   const [level, setLevel] = useState<GanttLevel>("executive");
+  const [showDependencies, setShowDependencies] = useState(true);
   const [exportError, setExportError] = useState<string>();
   const sections = useMemo(() => ganttLevels.map((entry) => ({
     key: entry.key,
@@ -1886,6 +1954,10 @@ function GanttView({ schedule, dateWindow, selected, onSelect }: { schedule: Pro
           ))}
         </div>
         <div className="gantt-downloads">
+          <label className="check gantt-dependency-toggle">
+            <input type="checkbox" checked={showDependencies} onChange={(event) => setShowDependencies(event.target.checked)} />
+            Show dependencies
+          </label>
           <button className="download-action" type="button" onClick={() => exportSections([{ label: active.label, items: active.items }])}>
             <Download size={15} />
             Download current level
@@ -1901,7 +1973,7 @@ function GanttView({ schedule, dateWindow, selected, onSelect }: { schedule: Pro
         <strong>{active.label}</strong>
         <span>{active.description}</span>
       </section>
-      <GanttChart schedule={schedule} items={active.items} selected={selected} onSelect={onSelect} dateWindow={dateWindow} />
+      <GanttChart schedule={schedule} items={active.items} selected={selected} onSelect={onSelect} dateWindow={dateWindow} showDependencies={showDependencies} />
     </>
   );
 }

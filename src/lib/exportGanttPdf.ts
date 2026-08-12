@@ -37,6 +37,26 @@ function bySoonest(a?: string, b?: string): number {
   return (parseDate(a)?.getTime() ?? Number.MAX_SAFE_INTEGER) - (parseDate(b)?.getTime() ?? Number.MAX_SAFE_INTEGER);
 }
 
+function uniqueItems(items: ProgrammeItem[]): ProgrammeItem[] {
+  return [...new Map(items.map((item) => [item.uid, item])).values()];
+}
+
+function directPredecessors(item: ProgrammeItem, schedule: ProgrammeSchedule): ProgrammeItem[] {
+  const byUid = new Map(schedule.items.map((entry) => [entry.uid, entry]));
+  return uniqueItems(item.predecessors
+    .map((link) => link.predecessorUid ? byUid.get(link.predecessorUid) : undefined)
+    .filter((entry): entry is ProgrammeItem => Boolean(entry?.isActive)));
+}
+
+function directSuccessors(item: ProgrammeItem, schedule: ProgrammeSchedule): ProgrammeItem[] {
+  const linkedBySuccessor = item.successors
+    .map((link) => link.successorUid ? schedule.items.find((entry) => entry.uid === link.successorUid) : undefined)
+    .filter((entry): entry is ProgrammeItem => Boolean(entry?.isActive));
+  const linkedByPredecessor = schedule.items
+    .filter((entry) => entry.isActive && entry.predecessors.some((link) => link.predecessorUid === item.uid));
+  return uniqueItems([...linkedBySuccessor, ...linkedByPredecessor]);
+}
+
 function ganttBounds(items: ProgrammeItem[], schedule: ProgrammeSchedule, dateWindow: DateWindow) {
   const dates = [
     dateWindow.start ?? parseDate(schedule.startDate),
@@ -129,6 +149,7 @@ function drawLegend(doc: JsPDF, x: number, y: number) {
     ["green", "Complete"],
     ["amber", "At risk"],
     ["red", "Late / blocked"],
+    ["blue", "Dependency count shown in row label"],
   ];
   doc.setFont("helvetica", "normal");
   doc.setFontSize(7);
@@ -175,12 +196,20 @@ function drawSection(doc: JsPDF, schedule: ProgrammeSchedule, section: GanttPdfS
       y += 15;
     }
     setDraw(doc, colours.line);
-    doc.line(margin, y + 5, pageWidth - margin, y + 5);
+    doc.line(margin, y + 7, pageWidth - margin, y + 7);
     doc.setFont("helvetica", item.isSummary ? "bold" : "normal");
     doc.setFontSize(item.isSummary ? 7.4 : 7);
     setText(doc, item.isSummary ? colours.ink : colours.muted);
     const label = `${item.stream ? `${item.stream}: ` : ""}${item.name}`;
     doc.text(doc.splitTextToSize(label, labelWidth).slice(0, 2), margin, y);
+    const predecessorCount = directPredecessors(item, schedule).length;
+    const successorCount = directSuccessors(item, schedule).length;
+    if (predecessorCount || successorCount) {
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(5.8);
+      setText(doc, colours.blue);
+      doc.text(`Pred ${predecessorCount} · Succ ${successorCount}`, margin, y + 5);
+    }
 
     const startPct = item.isMilestone ? position(item.finishDate, bounds) : position(item.startDate ?? item.finishDate, bounds);
     const finishPct = position(item.finishDate ?? item.startDate, bounds);
@@ -188,17 +217,17 @@ function drawSection(doc: JsPDF, schedule: ProgrammeSchedule, section: GanttPdfS
     const endX = chartX + (Math.max(startPct, finishPct) / 100) * chartW;
     setFill(doc, colours[tone(item)]);
     if (item.isMilestone) {
-      doc.triangle(startX, y - 2, startX + 3, y + 1, startX, y + 4, "F");
-      doc.triangle(startX, y - 2, startX - 3, y + 1, startX, y + 4, "F");
+      doc.triangle(startX, y - 1, startX + 3, y + 2, startX, y + 5, "F");
+      doc.triangle(startX, y - 1, startX - 3, y + 2, startX, y + 5, "F");
     } else {
-      doc.roundedRect(startX, y - 2, Math.max(2, endX - startX), item.isSummary ? 5 : 4, 1.2, 1.2, "F");
+      doc.roundedRect(startX, y - 1, Math.max(2, endX - startX), item.isSummary ? 5 : 4, 1.2, 1.2, "F");
     }
     if (item.baselineFinish) {
       const baseX = chartX + (position(item.baselineFinish, bounds) / 100) * chartW;
       setDraw(doc, colours.muted);
-      doc.line(baseX, y - 4, baseX, y + 5);
+      doc.line(baseX, y - 3, baseX, y + 6);
     }
-    y += 8;
+    y += 10;
   });
 
   if (!rows.length) {
