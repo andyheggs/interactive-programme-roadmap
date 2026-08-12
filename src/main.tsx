@@ -28,6 +28,7 @@ import {
 } from "lucide-react";
 import { exportProgrammePdf } from "./lib/exportProgrammePdf";
 import { exportElementPdf } from "./lib/exportElementPdf";
+import { exportWeeklyStatusPdf as exportWeeklyStatusA4Pdf } from "./lib/exportWeeklyStatusPdf";
 import { parseMicrosoftProjectXml } from "./lib/parseMicrosoftProjectXml";
 import { parseMeetingTracker } from "./lib/parseMeetingTracker";
 import { clamp, formatDate, parseDate, uniqueSorted } from "./lib/dateUtils";
@@ -1557,7 +1558,7 @@ function WeeklyExecutiveStatusView({
       <div className="snapshot-actions">
         <button className="download-action" type="button" onClick={onExportPdf}>
           <Download size={15} />
-          Download Weekly Status PDF
+          Download A4 Weekly Status PDF
         </button>
       </div>
     </>
@@ -2147,13 +2148,7 @@ function App() {
   async function exportWeeklyStatusPdf() {
     setError(undefined);
     try {
-      const element = document.getElementById("weekly-status-export");
-      if (!element) throw new Error("Open the Weekly Executive Status page before exporting the weekly status.");
-      await exportElementPdf({
-        element,
-        title: schedule.title,
-        fileNameSuffix: "weekly-executive-status",
-      });
+      await exportWeeklyStatusA4Pdf({ schedule, tracker, dateWindow });
     } catch (err) {
       setError(err instanceof Error ? err.message : "The Weekly Executive Status PDF could not be generated.");
     }
