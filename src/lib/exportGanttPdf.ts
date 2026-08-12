@@ -37,6 +37,13 @@ function bySoonest(a?: string, b?: string): number {
   return (parseDate(a)?.getTime() ?? Number.MAX_SAFE_INTEGER) - (parseDate(b)?.getTime() ?? Number.MAX_SAFE_INTEGER);
 }
 
+function projectOrder(a: ProgrammeItem, b: ProgrammeItem): number {
+  const aId = Number(a.id);
+  const bId = Number(b.id);
+  if (Number.isFinite(aId) && Number.isFinite(bId) && aId !== bId) return aId - bId;
+  return (a.outlineNumber ?? a.wbs ?? "").localeCompare(b.outlineNumber ?? b.wbs ?? "", undefined, { numeric: true }) || bySoonest(a.startDate ?? a.finishDate, b.startDate ?? b.finishDate);
+}
+
 function uniqueItems(items: ProgrammeItem[]): ProgrammeItem[] {
   return [...new Map(items.map((item) => [item.uid, item])).values()];
 }
@@ -149,7 +156,7 @@ function drawLegend(doc: JsPDF, x: number, y: number) {
     ["green", "Complete"],
     ["amber", "At risk"],
     ["red", "Late / blocked"],
-    ["blue", "Dependency count shown in row label"],
+    ["blue", "Predecessors shown in task table"],
   ];
   doc.setFont("helvetica", "normal");
   doc.setFontSize(7);
@@ -173,7 +180,7 @@ function drawSection(doc: JsPDF, schedule: ProgrammeSchedule, section: GanttPdfS
   const bounds = ganttBounds(section.items, schedule, dateWindow);
   const rows = section.items
     .slice()
-    .sort((a, b) => (a.stream ?? "").localeCompare(b.stream ?? "") || bySoonest(a.startDate ?? a.finishDate, b.startDate ?? b.finishDate))
+    .sort(projectOrder)
     .slice(0, 80);
   let y = 34;
 

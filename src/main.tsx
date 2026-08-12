@@ -2,7 +2,6 @@ import React, { useEffect, useMemo, useState } from "react";
 import { createRoot } from "react-dom/client";
 import {
   AlertTriangle,
-  ArrowRight,
   CalendarDays,
   CheckCircle2,
   ChevronRight,
@@ -39,7 +38,7 @@ import { exportTeamActionsPdf as exportTeamActionsA4Pdf } from "./lib/exportTeam
 import { exportWeeklyStatusPdf as exportWeeklyStatusA4Pdf } from "./lib/exportWeeklyStatusPdf";
 import { parseMicrosoftProjectXml } from "./lib/parseMicrosoftProjectXml";
 import { parseMeetingTracker } from "./lib/parseMeetingTracker";
-import { clamp, formatDate, parseDate, uniqueSorted } from "./lib/dateUtils";
+import { clamp, durationLabel, formatDate, parseDate, uniqueSorted } from "./lib/dateUtils";
 import type { ProgrammeFilters, ProgrammeItem, ProgrammeSchedule, ProgrammeView } from "./types/programme";
 import type { TrackerAction, TrackerChange, TrackerData, TrackerDecision, TrackerIssue, TrackerRisk } from "./types/reporting";
 import "./styles.css";
@@ -737,23 +736,30 @@ type GanttLevel = "executive" | "milestones" | "all";
 const ganttLevels: Array<{ key: GanttLevel; label: string; description: string }> = [
   {
     key: "executive",
-    label: "Executive Gantt",
-    description: "Executive milestones and the key predecessor items linked to them.",
+    label: "Executive",
+    description: "Executive milestones and the key linked predecessor rows, shown in a Microsoft Project-style Gantt.",
   },
   {
     key: "milestones",
-    label: "Milestone Gantt",
-    description: "Roadmap, board-reportable and standard milestones in the selected date window.",
+    label: "Standard Milestones",
+    description: "Standard programme milestones, including roadmap and board-reportable milestones, excluding executive-only outcomes.",
   },
   {
     key: "all",
-    label: "Full Schedule Gantt",
-    description: "All active dated Project plan items, grouped by workstream.",
+    label: "All Levels",
+    description: "All active dated Project plan rows, preserving the outline level and summary task structure.",
   },
 ];
 
 function uniqueItems(items: ProgrammeItem[]): ProgrammeItem[] {
   return [...new Map(items.map((item) => [item.uid, item])).values()];
+}
+
+function projectOrder(a: ProgrammeItem, b: ProgrammeItem): number {
+  const aId = Number(a.id);
+  const bId = Number(b.id);
+  if (Number.isFinite(aId) && Number.isFinite(bId) && aId !== bId) return aId - bId;
+  return (a.outlineNumber ?? a.wbs ?? "").localeCompare(b.outlineNumber ?? b.wbs ?? "", undefined, { numeric: true }) || bySoonest(a.startDate ?? a.finishDate, b.startDate ?? b.finishDate);
 }
 
 function ganttItemsForLevel(schedule: ProgrammeSchedule, dateWindow: DateWindow, level: GanttLevel): ProgrammeItem[] {
@@ -762,16 +768,16 @@ function ganttItemsForLevel(schedule: ProgrammeSchedule, dateWindow: DateWindow,
     const model = buildExecutiveRoadmapModel(schedule, undefined, dateWindow);
     return uniqueItems(model.paths.flatMap((path) => [...path.dependencies, path.outcome]))
       .filter(withinWindow)
-      .sort((a, b) => bySoonest(a.startDate ?? a.finishDate, b.startDate ?? b.finishDate));
+      .sort(projectOrder);
   }
   if (level === "milestones") {
     return schedule.items
-      .filter((item) => withinWindow(item) && (item.isMilestone || item.roadmapMilestone || item.boardReportable || item.executiveMilestone))
-      .sort((a, b) => itemImportance(b) - itemImportance(a) || bySoonest(a.finishDate, b.finishDate));
+      .filter((item) => withinWindow(item) && (item.isMilestone || item.roadmapMilestone || item.boardReportable) && !item.executiveMilestone)
+      .sort(projectOrder);
   }
   return schedule.items
     .filter(withinWindow)
-    .sort((a, b) => (a.stream ?? "").localeCompare(b.stream ?? "") || bySoonest(a.startDate ?? a.finishDate, b.startDate ?? b.finishDate));
+    .sort(projectOrder);
 }
 
 function lateMilestones(schedule: ProgrammeSchedule): ProgrammeItem[] {
@@ -1778,15 +1784,15 @@ function immediatePredecessors(item: ProgrammeItem | undefined, byUid: Map<strin
     .sort((a, b) => bySoonest(a.finishDate, b.finishDate));
 }
 
-function immediateSuccessors(item: ProgrammeItem | undefined, schedule: ProgrammeSchedule): ProgrammeItem[] {
-  if (!item) return [];
-  const linkedBySuccessor = item.successors
-    .map((link) => link.successorUid ? schedule.items.find((entry) => entry.uid === link.successorUid) : undefined)
-    .filter((entry): entry is ProgrammeItem => Boolean(entry?.isActive));
-  const linkedByPredecessor = schedule.items
-    .filter((entry) => entry.isActive && entry.predecessors.some((link) => link.predecessorUid === item.uid));
-  return uniqueItems([...linkedBySuccessor, ...linkedByPredecessor])
-    .sort((a, b) => bySoonest(a.finishDate, b.finishDate));
+function predecessorText(item: ProgrammeItem, byUid: Map<string, ProgrammeItem>): string {
+  const values = item.predecessors
+    .map((link) => {
+      if (!link.predecessorUid) return undefined;
+      const predecessor = byUid.get(link.predecessorUid);
+      return predecessor?.id ?? predecessor?.outlineNumber ?? predecessor?.wbs ?? predecessor?.uid;
+    })
+    .filter(Boolean);
+  return values.length ? values.join(", ") : "-";
 }
 
 function GanttChart({
@@ -1795,47 +1801,46 @@ function GanttChart({
   selected,
   onSelect,
   dateWindow,
-  showDependencies,
 }: {
   schedule: ProgrammeSchedule;
   items: ProgrammeItem[];
   selected?: ProgrammeItem;
   onSelect: (item: ProgrammeItem) => void;
   dateWindow: DateWindow;
-  showDependencies: boolean;
 }) {
   const visibleItems = items.slice(0, 220);
   const bounds = useMemo(() => timelineBounds(visibleItems.length ? visibleItems : schedule.items, schedule, dateWindow), [dateWindow, schedule, visibleItems]);
   const ticks = useMemo(() => ganttScaleTicks(bounds), [bounds]);
   const statusMarker = positionFor(schedule.statusDate, bounds);
   const byUid = useMemo(() => new Map(schedule.items.map((item) => [item.uid, item])), [schedule.items]);
-  const activeItem = visibleItems.find((item) => item.uid === selected?.uid);
-  const selectedPredecessors = immediatePredecessors(activeItem, byUid);
-  const selectedSuccessors = immediateSuccessors(activeItem, schedule);
+  const selectedPredecessors = immediatePredecessors(selected, byUid);
   const predecessorIds = new Set(selectedPredecessors.map((item) => item.uid));
-  const successorIds = new Set(selectedSuccessors.map((item) => item.uid));
-  const selectedLinkedCount = selectedPredecessors.length + selectedSuccessors.length;
   return (
     <section className="gantt-shell">
       <div className="gantt-summary">
         <strong>{visibleItems.length}</strong> items shown
         {items.length > visibleItems.length ? <span> from {items.length} dated items</span> : null}
         <span>{dateWindow.label}</span>
-        {showDependencies ? <span>{selectedLinkedCount} links for selected item</span> : null}
       </div>
       <div className="gantt-legend">
         <span><i className="gantt-key summary" />Summary</span>
-        <span><i className="gantt-key task" />Planned</span>
+        <span><i className="gantt-key task" />Task</span>
         <span><i className="gantt-key complete" />Complete</span>
         <span><i className="gantt-key risk" />At risk</span>
         <span><i className="gantt-key late" />Late / blocked</span>
         <span><Diamond size={13} />Milestone</span>
         <span><i className="gantt-key baseline" />Baseline finish</span>
-        <span><i className="gantt-key dependency" />Selected dependency</span>
+        <span><i className="gantt-key dependency" />Selected predecessor</span>
       </div>
-      <div className="gantt-board" style={{ ["--status-left" as string]: `${statusMarker}%` }}>
-        <div className="gantt-label-head">Item</div>
-        <div className="gantt-scale">
+      <div className="msp-gantt" style={{ ["--status-left" as string]: `${statusMarker}%` }}>
+        <div className="msp-head">ID</div>
+        <div className="msp-head task-name">Task Name</div>
+        <div className="msp-head">Start</div>
+        <div className="msp-head">Finish</div>
+        <div className="msp-head">Duration</div>
+        <div className="msp-head">% Complete</div>
+        <div className="msp-head">Predecessors</div>
+        <div className="msp-scale">
           {ticks.map((tick) => (
             <span key={`${tick.label}-${tick.left}`} style={{ left: `${tick.left}%` }}>{tick.label}</span>
           ))}
@@ -1848,27 +1853,33 @@ function GanttChart({
           const baseline = positionFor(item.baselineFinish, bounds);
           const tone = ganttTone(item);
           const isSelected = selected?.uid === item.uid;
-          const isPredecessor = showDependencies && predecessorIds.has(item.uid);
-          const isSuccessor = showDependencies && successorIds.has(item.uid);
-          const rowDeps = showDependencies ? immediatePredecessors(item, byUid).filter((dependency) => visibleItems.some((visible) => visible.uid === dependency.uid)) : [];
+          const isPredecessor = predecessorIds.has(item.uid);
+          const rowClass = `${isSelected ? "selected" : ""} ${isPredecessor ? "dependency-predecessor" : ""} ${item.isSummary ? "summary" : ""}`;
           return (
             <React.Fragment key={item.uid}>
               <button
-                className={`gantt-label ${isSelected ? "selected" : ""} ${isPredecessor ? "dependency-predecessor" : ""} ${isSuccessor ? "dependency-successor" : ""}`}
+                className={`msp-cell msp-id ${rowClass}`}
                 type="button"
                 onClick={() => onSelect(item)}
               >
-                <span>{item.stream ?? item.roadmapView ?? "No stream"}</span>
+                {item.id ?? item.outlineNumber ?? "-"}
+              </button>
+              <button
+                className={`msp-cell msp-task-name ${rowClass}`}
+                type="button"
+                onClick={() => onSelect(item)}
+                style={{ ["--indent" as string]: `${Math.max(0, item.outlineLevel - 1) * 14}px` }}
+              >
+                <span>{item.outlineNumber ?? item.wbs ?? ""}</span>
                 <strong>{item.name}</strong>
               </button>
-              <div className={`gantt-row ${isSelected ? "selected" : ""} ${isPredecessor ? "dependency-predecessor" : ""} ${isSuccessor ? "dependency-successor" : ""}`}>
+              <button className={`msp-cell ${rowClass}`} type="button" onClick={() => onSelect(item)}>{formatDate(item.startDate)}</button>
+              <button className={`msp-cell ${rowClass}`} type="button" onClick={() => onSelect(item)}>{formatDate(item.finishDate)}</button>
+              <button className={`msp-cell ${rowClass}`} type="button" onClick={() => onSelect(item)}>{durationLabel(item.duration)}</button>
+              <button className={`msp-cell ${rowClass}`} type="button" onClick={() => onSelect(item)}>{item.percentComplete ?? 0}%</button>
+              <button className={`msp-cell ${rowClass}`} type="button" onClick={() => onSelect(item)}>{predecessorText(item, byUid)}</button>
+              <div className={`msp-chart-row ${rowClass}`}>
                 {item.baselineFinish ? <i className="gantt-baseline" style={{ left: `${baseline}%` }} /> : null}
-                {rowDeps.length ? (
-                  <span className="gantt-dependency-chip" style={{ left: `${Math.max(1, left - 5)}%` }}>
-                    <ArrowRight size={12} />
-                    {rowDeps.length}
-                  </span>
-                ) : null}
                 <button
                   className={`gantt-bar ${tone} ${item.isMilestone ? "milestone" : ""} ${item.executiveMilestone ? "executive" : ""}`}
                   type="button"
@@ -1883,43 +1894,15 @@ function GanttChart({
           );
         })}
         {!visibleItems.length ? (
-          <div className="gantt-empty">No dated items found for this Gantt level and date window.</div>
+          <div className="gantt-empty">No dated Project rows found for this Gantt level and date window.</div>
         ) : null}
       </div>
-      <section className="gantt-dependency-panel">
-        <div>
-          <span>Selected item</span>
-          <strong>{activeItem?.name ?? "Select a task or milestone"}</strong>
-          <em>{activeItem ? `${formatDate(activeItem.startDate)} - ${formatDate(activeItem.finishDate)}` : "Dependency detail will appear here."}</em>
-        </div>
-        <div className="gantt-dependency-column">
-          <h3>Immediate predecessors</h3>
-          {selectedPredecessors.length ? selectedPredecessors.slice(0, 6).map((item) => (
-            <button type="button" key={item.uid} onClick={() => onSelect(item)}>
-              <span>{formatDate(item.finishDate)}</span>
-              <strong>{item.name}</strong>
-              <em>{item.stream ?? item.milestoneLevel ?? item.status}</em>
-            </button>
-          )) : <p>No predecessor links found for the selected item.</p>}
-        </div>
-        <div className="gantt-dependency-column">
-          <h3>Immediate successors</h3>
-          {selectedSuccessors.length ? selectedSuccessors.slice(0, 6).map((item) => (
-            <button type="button" key={item.uid} onClick={() => onSelect(item)}>
-              <span>{formatDate(item.finishDate)}</span>
-              <strong>{item.name}</strong>
-              <em>{item.stream ?? item.milestoneLevel ?? item.status}</em>
-            </button>
-          )) : <p>No successor links found for the selected item.</p>}
-        </div>
-      </section>
     </section>
   );
 }
 
 function GanttView({ schedule, dateWindow, selected, onSelect }: { schedule: ProgrammeSchedule; dateWindow: DateWindow; selected?: ProgrammeItem; onSelect: (item: ProgrammeItem) => void }) {
   const [level, setLevel] = useState<GanttLevel>("executive");
-  const [showDependencies, setShowDependencies] = useState(true);
   const [exportError, setExportError] = useState<string>();
   const sections = useMemo(() => ganttLevels.map((entry) => ({
     key: entry.key,
@@ -1939,7 +1922,7 @@ function GanttView({ schedule, dateWindow, selected, onSelect }: { schedule: Pro
 
   return (
     <>
-      <PageIntro title="Gantt View">A date-led schedule view with executive, milestone and full-plan levels kept together for review and export.</PageIntro>
+      <PageIntro title="Gantt View">A Microsoft Project-style Gantt with task table columns, timeline bars and predecessor references from the imported XML.</PageIntro>
       <section className="gantt-controls">
         <div className="tabs">
           {sections.map((entry) => (
@@ -1954,10 +1937,6 @@ function GanttView({ schedule, dateWindow, selected, onSelect }: { schedule: Pro
           ))}
         </div>
         <div className="gantt-downloads">
-          <label className="check gantt-dependency-toggle">
-            <input type="checkbox" checked={showDependencies} onChange={(event) => setShowDependencies(event.target.checked)} />
-            Show dependencies
-          </label>
           <button className="download-action" type="button" onClick={() => exportSections([{ label: active.label, items: active.items }])}>
             <Download size={15} />
             Download current level
@@ -1973,7 +1952,7 @@ function GanttView({ schedule, dateWindow, selected, onSelect }: { schedule: Pro
         <strong>{active.label}</strong>
         <span>{active.description}</span>
       </section>
-      <GanttChart schedule={schedule} items={active.items} selected={selected} onSelect={onSelect} dateWindow={dateWindow} showDependencies={showDependencies} />
+      <GanttChart schedule={schedule} items={active.items} selected={selected} onSelect={onSelect} dateWindow={dateWindow} />
     </>
   );
 }
