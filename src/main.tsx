@@ -32,7 +32,7 @@ import { parseMicrosoftProjectXml } from "./lib/parseMicrosoftProjectXml";
 import { parseMeetingTracker } from "./lib/parseMeetingTracker";
 import { clamp, formatDate, parseDate, uniqueSorted } from "./lib/dateUtils";
 import type { ProgrammeFilters, ProgrammeItem, ProgrammeSchedule, ProgrammeView } from "./types/programme";
-import type { TrackerAction, TrackerData, TrackerDecision, TrackerIssue, TrackerRisk } from "./types/reporting";
+import type { TrackerAction, TrackerChange, TrackerData, TrackerDecision, TrackerIssue, TrackerRisk } from "./types/reporting";
 import "./styles.css";
 
 const initialFilters: ProgrammeFilters = {
@@ -577,6 +577,45 @@ function weeklyMovement(tracker?: TrackerData): string | undefined {
   if (!currentScore || !previousScore) return undefined;
   if (currentScore === previousScore) return "Stable";
   return currentScore > previousScore ? "Worsened" : "Improved";
+}
+
+function isOutstandingDecision(decision: TrackerDecision): boolean {
+  const status = normaliseText(decision.status);
+  if (["approved", "agreed", "decided", "closed", "complete", "completed", "done", "superseded", "cancelled", "not required"].includes(status)) {
+    return false;
+  }
+  return Boolean(
+    decision.dashboardFlag ||
+      parseDate(decision.decisionRequiredBy) ||
+      meaningfulText(decision.decisionRequiredByLabel) ||
+      normaliseText(decision.decisionType).includes("required") ||
+      normaliseText(decision.decisionType).includes("pending") ||
+      status.includes("pending") ||
+      status.includes("progress"),
+  );
+}
+
+function decisionSort(a: TrackerDecision, b: TrackerDecision): number {
+  return Number(Boolean(b.dashboardFlag)) - Number(Boolean(a.dashboardFlag)) || bySoonest(a.decisionRequiredBy ?? a.decisionDate, b.decisionRequiredBy ?? b.decisionDate);
+}
+
+function isSignificantChange(change: TrackerChange): boolean {
+  const status = normaliseText(change.status);
+  if (["closed", "complete", "completed", "done", "superseded", "cancelled"].includes(status)) return false;
+  return Boolean(
+    change.dashboardFlag ||
+      meaningfulText(change.decisionRequired) ||
+      meaningfulText(change.impactOnTime) ||
+      meaningfulText(change.impactOnScope) ||
+      meaningfulText(change.impactOnCost) ||
+      meaningfulText(change.impactOnQualityOrBenefits),
+  );
+}
+
+function changeSort(a: TrackerChange, b: TrackerChange): number {
+  const aDate = parseDate(a.lastDiscussedDate ?? a.dateRaised);
+  const bDate = parseDate(b.lastDiscussedDate ?? b.dateRaised);
+  return Number(Boolean(b.dashboardFlag)) - Number(Boolean(a.dashboardFlag)) || (bDate?.getTime() ?? 0) - (aDate?.getTime() ?? 0);
 }
 
 function isCompleteStatus(status?: string): boolean {
@@ -1384,10 +1423,10 @@ function WeeklyExecutiveStatusView({
     .filter((item) => isHighLevelMilestone(item) && dateWithin(item.finishDate, forwardWindow) && item.status !== "complete")
     .sort((a, b) => bySoonest(a.finishDate, b.finishDate))
     .slice(0, 5);
-  const keyChanges = (tracker?.changes ?? [])
-    .filter((change) => change.dashboardFlag || isOpenStatus(change.status))
-    .sort((a, b) => (parseDate(b.lastDiscussedDate ?? b.dateRaised)?.getTime() ?? 0) - (parseDate(a.lastDiscussedDate ?? a.dateRaised)?.getTime() ?? 0))
-    .slice(0, 3);
+  const significantChanges = (tracker?.changes ?? [])
+    .filter(isSignificantChange)
+    .sort(changeSort)
+    .slice(0, 5);
   const risksIssues = sortFlaggedFirst([
     ...openRisks(tracker)
       .filter((risk) => risk.dashboardFlag || isRedOrAmber(risk.rag))
@@ -1396,9 +1435,9 @@ function WeeklyExecutiveStatusView({
       .filter((issue) => issue.dashboardFlag || isRedOrAmber(issue.rag) || isRedOrAmber(issue.priority))
       .map((issue) => ({ id: `issue-${issue.id}`, title: issue.title, meta: issue.latestUpdate ?? issue.requiredAction ?? issue.impact ?? "", status: issue.rag ?? issue.priority ?? issue.status, stream: issue.stream, dashboardFlag: issue.dashboardFlag })),
   ]).slice(0, 5);
-  const decisions = openDecisions(tracker)
-    .filter((decision) => decision.dashboardFlag || normaliseText(decision.status).includes("pending") || normaliseText(decision.decisionType).includes("required"))
-    .sort((a, b) => bySoonest(a.decisionRequiredBy ?? a.decisionDate, b.decisionRequiredBy ?? b.decisionDate))
+  const decisionsNeeded = (tracker?.decisions ?? [])
+    .filter(isOutstandingDecision)
+    .sort(decisionSort)
     .slice(0, 5);
   const ragTone = toneClass(weekly?.overallRag);
   const movement = weeklyMovement(tracker);
@@ -1406,7 +1445,7 @@ function WeeklyExecutiveStatusView({
   const mainBlocker = meaningfulText(weekly?.mainBlocker) ?? risksIssues[0]?.title;
   const progressItems = [...splitDigest(weekly?.keyProgress, 4), ...splitDigest(weekly?.whatChanged, 2)].slice(0, 5);
   const priorityItems = splitDigest(weekly?.priorityActions, 5);
-  const leadershipAsk = meaningfulText(weekly?.askSteerNeeded) ?? meaningfulText(weekly?.decisionsNeeded) ?? decisions[0]?.title;
+  const leadershipAsk = meaningfulText(weekly?.askSteerNeeded) ?? meaningfulText(weekly?.decisionsNeeded) ?? decisionsNeeded[0]?.title;
   const trackerStatus = tracker
     ? `${tracker.sourceFileName ?? "Tracker workbook"} | ${tracker.weeklySummaries.length} weekly summaries | ${tracker.risks.length} risks | ${tracker.issues.length} issues | ${tracker.actions.length} actions`
     : "Import the latest tracker workbook to populate RAG, weekly narrative, risks, decisions and actions.";
@@ -1470,7 +1509,7 @@ function WeeklyExecutiveStatusView({
 
         <section className="weekly-grid">
           <article className="weekly-card">
-            <h3>Key dates</h3>
+            <h3>Upcoming key milestones</h3>
             {upcomingMilestones.map((item) => (
               <div className="weekly-row" key={item.uid}>
                 <span>{formatDate(item.finishDate)}</span>
@@ -1492,14 +1531,26 @@ function WeeklyExecutiveStatusView({
             {!risksIssues.length ? <p>No dashboard or red/amber risks or issues currently flagged.</p> : null}
           </article>
           <article className="weekly-card">
-            <h3>Decisions / changes</h3>
-            {[...decisions.map((decision) => ({ id: decision.id, title: decision.title, meta: decision.decisionMaker ?? decision.owner ?? decision.status, date: decision.decisionRequiredBy ?? decision.decisionDate })), ...keyChanges.map((change) => ({ id: change.id, title: change.title, meta: change.decisionRequired ?? change.impactOnTime ?? change.latestUpdate, date: change.lastDiscussedDate ?? change.dateRaised }))].slice(0, 5).map((item) => (
-              <div className="weekly-row" key={item.id}>
-                <span>{formatDate(item.date)}</span>
-                <strong>{item.title}</strong>
-                <em>{item.meta}</em>
+            <h3>Decisions needed</h3>
+            {decisionsNeeded.map((decision) => (
+              <div className="weekly-row" key={decision.id}>
+                <span>{formatDateOrText(decision.decisionRequiredBy ?? decision.decisionDate, "Decision date tbc")}</span>
+                <strong>{decision.title}</strong>
+                <em>{decision.decisionMaker ?? decision.owner ?? decision.status ?? "Decision required"}</em>
               </div>
             ))}
+            {!decisionsNeeded.length ? <p>No outstanding executive decisions currently flagged.</p> : null}
+          </article>
+          <article className="weekly-card">
+            <h3>Significant changes</h3>
+            {significantChanges.map((change) => (
+              <div className="weekly-row" key={change.id}>
+                <span>{formatDate(change.lastDiscussedDate ?? change.dateRaised)}</span>
+                <strong>{change.title}</strong>
+                <em>{meaningfulText(change.decisionRequired) ?? meaningfulText(change.impactOnTime) ?? meaningfulText(change.impactOnScope) ?? meaningfulText(change.impactOnCost) ?? meaningfulText(change.impactOnQualityOrBenefits) ?? change.status ?? "Significant change"}</em>
+              </div>
+            ))}
+            {!significantChanges.length ? <p>No significant changes currently flagged for leadership visibility.</p> : null}
           </article>
         </section>
       </div>
