@@ -893,23 +893,22 @@ function executiveTone(item?: ProgrammeItem): ExecutiveTone {
   if (!item) return "grey";
   const rag = normaliseText(item.ragStatus);
   const confidence = normaliseText(item.dateConfidence);
+  const uncertainDate = Boolean(
+    confidence.includes("medium") ||
+      confidence.includes("low") ||
+      confidence.includes("tbc") ||
+      confidence.includes("unconfirmed") ||
+      confidence.includes("assumption") ||
+      confidence.includes("target") ||
+      confidence.includes("not yet confirmed"),
+  );
   if (rag.includes("red")) return "red";
   if (rag.includes("amber")) return "amber";
-  if (rag.includes("green")) return "green";
   if (item.status === "blocked") return "red";
   if (item.status === "complete") return "green";
+  if (uncertainDate || item.externalDependency || item.decisionRequired) return "amber";
+  if (rag.includes("green")) return "green";
   if (confidence.includes("high") || confidence.includes("confirmed") || confidence.includes("credible")) return "green";
-  if (
-    confidence.includes("medium") ||
-    confidence.includes("low") ||
-    confidence.includes("tbc") ||
-    confidence.includes("unconfirmed") ||
-    confidence.includes("assumption") ||
-    item.externalDependency ||
-    item.decisionRequired
-  ) {
-    return "amber";
-  }
   if (item.finishDate) return "blue";
   return "grey";
 }
@@ -1342,9 +1341,9 @@ function ExecutiveSnapshotView({
           </div>
 
           <div className="exec-legend" aria-label="Roadmap legend">
-            <span><i className="legend-dot green" /> Complete</span>
-            <span><i className="legend-dot blue" /> Planned / on track</span>
-            <span><i className="legend-dot amber" /> At risk / unconfirmed</span>
+            <span><i className="legend-dot green" /> Complete / confirmed</span>
+            <span><i className="legend-dot blue" /> Planned / dated</span>
+            <span><i className="legend-dot amber" /> At risk / date assumption</span>
             <span><i className="legend-dot red" /> Blocked / overdue</span>
             <span><i className="legend-dot grey" /> Not assessed</span>
             <span><i className="legend-dot executive" /> Executive dependency</span>

@@ -112,6 +112,38 @@ function drawSummaryCard(doc: JsPDF, x: number, y: number, w: number, title: str
   doc.text(doc.splitTextToSize(value, w - 8).slice(0, 2), x + 4, y + 15);
 }
 
+function drawLegend(doc: JsPDF, x: number, y: number, w: number): number {
+  const items: Array<{ tone: ExecutiveTone; label: string }> = [
+    { tone: "green", label: "Complete / confirmed" },
+    { tone: "blue", label: "Planned / dated" },
+    { tone: "amber", label: "At risk / date assumption" },
+    { tone: "red", label: "Blocked / overdue" },
+    { tone: "grey", label: "Not assessed" },
+  ];
+  setDraw(doc, colours.line);
+  setFill(doc, colours.pale);
+  doc.roundedRect(x, y, w, 18, 2.5, 2.5, "FD");
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(7.2);
+  setText(doc, colours.muted);
+  doc.text("Colour status", x + 4, y + 7);
+  let cursor = x + 34;
+  items.forEach((item) => {
+    setFill(doc, toneColours[item.tone]);
+    doc.circle(cursor, y + 6, 2.4, "F");
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(7.1);
+    setText(doc, colours.ink);
+    doc.text(item.label, cursor + 5, y + 8);
+    cursor += doc.getTextWidth(item.label) + 18;
+  });
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(7);
+  setText(doc, colours.muted);
+  doc.text("Amber includes target dates, unconfirmed supplier plans, external dependencies or decisions required.", x + 4, y + 15);
+  return y + 24;
+}
+
 function drawMilestoneCard(doc: JsPDF, item: ProgrammeItem, x: number, y: number, w: number, h: number) {
   const tone = executiveTone(item);
   setDraw(doc, colours.line);
@@ -206,7 +238,8 @@ export async function exportExecutiveRoadmapPosterPdf(schedule: ProgrammeSchedul
   drawSummaryCard(doc, margin + (summaryWidth + cardGap), y, summaryWidth, "Original delivery plan", formatDate(model.originalDeliveryDate));
   drawSummaryCard(doc, margin + (summaryWidth + cardGap) * 2, y, summaryWidth, "Current forecast", formatDate(model.currentDeliveryDate));
   drawSummaryCard(doc, margin + (summaryWidth + cardGap) * 3, y, summaryWidth, "Forecast basis", model.forecastBasis);
-  y += 38;
+  y += 32;
+  y = drawLegend(doc, margin, y, pageWidth - margin * 2);
 
   doc.setFont("helvetica", "bold");
   doc.setFontSize(13);
@@ -283,10 +316,15 @@ export function exportExecutiveRoadmapHtml(schedule: ProgrammeSchedule, tracker:
     header p { color: #eaf4ee; }
     .summary, .milestones { display: grid; gap: 12px; }
     .summary { grid-template-columns: repeat(4, 1fr); margin-bottom: 24px; }
-    .summary article, .milestone, .path { border: 1px solid #c7d1cb; border-radius: 8px; background: white; box-shadow: 0 10px 24px rgba(23,32,27,.08); }
+    .summary article, .milestone, .path, .legend { border: 1px solid #c7d1cb; border-radius: 8px; background: white; box-shadow: 0 10px 24px rgba(23,32,27,.08); }
     .summary article { padding: 16px; }
     .summary span { display: block; color: #647269; font-size: 12px; font-weight: 800; text-transform: uppercase; }
     .summary strong { display: block; margin-top: 8px; font-size: 18px; }
+    .legend { display: flex; flex-wrap: wrap; gap: 12px 22px; align-items: center; margin-bottom: 24px; padding: 14px 16px; }
+    .legend strong { margin-right: 8px; }
+    .legend span { display: inline-flex; align-items: center; gap: 8px; color: #647269; font-size: 14px; font-weight: 800; }
+    .legend i { width: 14px; height: 14px; border-radius: 999px; background: var(--tone); }
+    .legend p { flex-basis: 100%; font-size: 13px; }
     .milestones { grid-template-columns: repeat(${Math.max(1, model.outcomes.length)}, 1fr); margin-bottom: 28px; }
     .milestone { min-height: 150px; padding: 18px; border-top: 7px solid var(--tone); }
     .milestone span, .node span { color: #647269; font-weight: 800; }
@@ -299,7 +337,7 @@ export function exportExecutiveRoadmapHtml(schedule: ProgrammeSchedule, tracker:
     .node { display: grid; gap: 8px; text-align: center; }
     .node i { justify-self: center; width: 18px; height: 18px; border-radius: 999px; background: var(--tone); }
     .node strong { font-size: 14px; line-height: 1.3; }
-    @media print { body { background: white; } main { padding: 12mm; } header { margin: -12mm -12mm 10mm; } .path, .milestone, .summary article { box-shadow: none; } }
+    @media print { body { background: white; } main { padding: 12mm; } header { margin: -12mm -12mm 10mm; } .path, .milestone, .summary article, .legend { box-shadow: none; } }
   </style>
 </head>
 <body>
@@ -316,6 +354,15 @@ export function exportExecutiveRoadmapHtml(schedule: ProgrammeSchedule, tracker:
       <article><span>Original delivery plan</span><strong>${escapeHtml(formatDate(model.originalDeliveryDate))}</strong></article>
       <article><span>Current forecast</span><strong>${escapeHtml(formatDate(model.currentDeliveryDate))}</strong></article>
       <article><span>Forecast basis</span><strong>${escapeHtml(model.forecastBasis)}</strong></article>
+    </section>
+    <section class="legend" aria-label="Colour status legend">
+      <strong>Colour status</strong>
+      <span class="green"><i></i>Complete / confirmed</span>
+      <span class="blue"><i></i>Planned / dated</span>
+      <span class="amber"><i></i>At risk / date assumption</span>
+      <span class="red"><i></i>Blocked / overdue</span>
+      <span class="grey"><i></i>Not assessed</span>
+      <p>Amber includes target dates, unconfirmed supplier plans, external dependencies or decisions required.</p>
     </section>
     <section class="milestones">${milestoneCards}</section>
     ${pathRows}

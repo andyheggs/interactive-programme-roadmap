@@ -209,23 +209,22 @@ function executiveTone(item?: ProgrammeItem): ExecutiveTone {
   if (!item) return "grey";
   const rag = normaliseText(item.ragStatus);
   const confidence = normaliseText(item.dateConfidence);
+  const uncertainDate = Boolean(
+    confidence.includes("medium") ||
+      confidence.includes("low") ||
+      confidence.includes("tbc") ||
+      confidence.includes("unconfirmed") ||
+      confidence.includes("assumption") ||
+      confidence.includes("target") ||
+      confidence.includes("not yet confirmed"),
+  );
   if (rag.includes("red")) return "red";
   if (rag.includes("amber")) return "amber";
-  if (rag.includes("green")) return "green";
   if (item.status === "blocked") return "red";
   if (item.status === "complete") return "green";
+  if (uncertainDate || item.externalDependency || item.decisionRequired) return "amber";
+  if (rag.includes("green")) return "green";
   if (confidence.includes("high") || confidence.includes("confirmed") || confidence.includes("credible")) return "green";
-  if (
-    confidence.includes("medium") ||
-    confidence.includes("low") ||
-    confidence.includes("tbc") ||
-    confidence.includes("unconfirmed") ||
-    confidence.includes("assumption") ||
-    item.externalDependency ||
-    item.decisionRequired
-  ) {
-    return "amber";
-  }
   if (item.finishDate) return "blue";
   return "grey";
 }
