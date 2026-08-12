@@ -33,6 +33,7 @@ import {
   exportExecutiveRoadmapImage,
   exportExecutiveRoadmapPosterPdf,
 } from "./lib/exportExecutiveRoadmapVisuals";
+import { executiveToneAssessment } from "./lib/executiveRoadmapData";
 import { exportTeamActionsPdf as exportTeamActionsA4Pdf } from "./lib/exportTeamActionsPdf";
 import { exportWeeklyStatusPdf as exportWeeklyStatusA4Pdf } from "./lib/exportWeeklyStatusPdf";
 import { parseMicrosoftProjectXml } from "./lib/parseMicrosoftProjectXml";
@@ -890,27 +891,7 @@ function executiveEnablerScore(item: ProgrammeItem): number {
 }
 
 function executiveTone(item?: ProgrammeItem): ExecutiveTone {
-  if (!item) return "grey";
-  const rag = normaliseText(item.ragStatus);
-  const confidence = normaliseText(item.dateConfidence);
-  const uncertainDate = Boolean(
-    confidence.includes("medium") ||
-      confidence.includes("low") ||
-      confidence.includes("tbc") ||
-      confidence.includes("unconfirmed") ||
-      confidence.includes("assumption") ||
-      confidence.includes("target") ||
-      confidence.includes("not yet confirmed"),
-  );
-  if (rag.includes("red")) return "red";
-  if (rag.includes("amber")) return "amber";
-  if (item.status === "blocked") return "red";
-  if (item.status === "complete") return "green";
-  if (uncertainDate || item.externalDependency || item.decisionRequired) return "amber";
-  if (rag.includes("green")) return "green";
-  if (confidence.includes("high") || confidence.includes("confirmed") || confidence.includes("credible")) return "green";
-  if (item.finishDate) return "blue";
-  return "grey";
+  return executiveToneAssessment(item).tone;
 }
 
 function recoveryConfidence(weekly: ReturnType<typeof latestWeeklySummary>, outcomes: ProgrammeItem[]): ExecutiveTone {
@@ -1360,6 +1341,7 @@ function ExecutiveSnapshotView({
                 ? [path.outcome, ...path.dependencies, ...pathChain].find((item) => item.uid === expandedUid)
                 : undefined;
               const expandedPredecessors = expandedItem ? directPredecessors(expandedItem, byUid).filter((item) => !item.isSummary) : [];
+              const expandedAssessment = expandedItem ? executiveToneAssessment(expandedItem) : undefined;
               return (
               <article className={`exec-path ${path.outcome.uid === selectedPath?.outcome.uid ? "selected" : ""}`} key={path.outcome.uid}>
                 <h3>{path.outcome.targetMilestone || path.outcome.name}</h3>
@@ -1414,6 +1396,27 @@ function ExecutiveSnapshotView({
                       <span>Expanded pathway item</span>
                       <h4>{expandedItem.name}</h4>
                       <p>{formatDate(expandedItem.finishDate)} · {expandedItem.stream ?? expandedItem.milestoneLevel ?? expandedItem.dependencyLevel ?? "Project plan item"}</p>
+                      {expandedAssessment ? (
+                        <div className={`exec-rag-explainer ${expandedAssessment.tone}`}>
+                          <strong>{executiveToneLabels[expandedAssessment.tone]} status rationale</strong>
+                          <p>{expandedAssessment.summary}</p>
+                          <ul>
+                            {expandedAssessment.reasons.map((reason) => (
+                              <li key={reason}>{reason}</li>
+                            ))}
+                          </ul>
+                          {expandedAssessment.evidence.length ? (
+                            <dl>
+                              {expandedAssessment.evidence.map((entry) => (
+                                <React.Fragment key={entry.label}>
+                                  <dt>{entry.label}</dt>
+                                  <dd>{entry.value}</dd>
+                                </React.Fragment>
+                              ))}
+                            </dl>
+                          ) : null}
+                        </div>
+                      ) : null}
                     </div>
                     <div className="exec-drilldown-list">
                       {expandedPredecessors.length ? expandedPredecessors.map((item) => {

@@ -5,6 +5,7 @@ import { formatDate } from "./dateUtils";
 import {
   buildExecutiveRoadmapModel,
   executiveTone,
+  executiveToneAssessment,
   executiveToneLabels,
   type DateWindow,
   type ExecutiveTone,
@@ -140,12 +141,13 @@ function drawLegend(doc: JsPDF, x: number, y: number, w: number): number {
   doc.setFont("helvetica", "normal");
   doc.setFontSize(7);
   setText(doc, colours.muted);
-  doc.text("Amber includes target dates, unconfirmed supplier plans, external dependencies or decisions required.", x + 4, y + 15);
+  doc.text("Amber means the source RAG is Amber, the date is an assumption, or an external dependency lacks confirmed date confidence.", x + 4, y + 15);
   return y + 24;
 }
 
 function drawMilestoneCard(doc: JsPDF, item: ProgrammeItem, x: number, y: number, w: number, h: number) {
   const tone = executiveTone(item);
+  const assessment = executiveToneAssessment(item);
   setDraw(doc, colours.line);
   setFill(doc, colours.white);
   doc.roundedRect(x, y, w, h, 2.5, 2.5, "FD");
@@ -157,7 +159,11 @@ function drawMilestoneCard(doc: JsPDF, item: ProgrammeItem, x: number, y: number
   doc.text(formatDate(item.finishDate), x + 4, y + 12);
   doc.setFontSize(9.4);
   setText(doc, colours.ink);
-  doc.text(doc.splitTextToSize(item.name, w - 8).slice(0, 4), x + 4, y + 22);
+  doc.text(doc.splitTextToSize(item.name, w - 8).slice(0, 3), x + 4, y + 22);
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(6.6);
+  setText(doc, colours.muted);
+  doc.text(doc.splitTextToSize(assessment.summary, w - 8).slice(0, 3), x + 4, y + h - 21);
   setFill(doc, toneColours[tone]);
   doc.roundedRect(x + 4, y + h - 12, 22, 7, 3, 3, "F");
   doc.setFontSize(6.2);
@@ -248,9 +254,9 @@ export async function exportExecutiveRoadmapPosterPdf(schedule: ProgrammeSchedul
   y += 8;
   const milestoneWidth = (pageWidth - margin * 2 - cardGap * Math.max(0, model.outcomes.length - 1)) / Math.max(1, model.outcomes.length);
   model.outcomes.forEach((item, index) => {
-    drawMilestoneCard(doc, item, margin + index * (milestoneWidth + cardGap), y, milestoneWidth, 50);
+    drawMilestoneCard(doc, item, margin + index * (milestoneWidth + cardGap), y, milestoneWidth, 62);
   });
-  y += 66;
+  y += 78;
 
   doc.setFont("helvetica", "bold");
   doc.setFontSize(13);
@@ -279,9 +285,11 @@ export function exportExecutiveRoadmapHtml(schedule: ProgrammeSchedule, tracker:
   const model = buildExecutiveRoadmapModel(schedule, tracker, dateWindow);
   const milestoneCards = model.outcomes.map((item) => {
     const tone = executiveTone(item);
+    const assessment = executiveToneAssessment(item);
     return `<article class="milestone ${tone}">
       <span>${escapeHtml(formatDate(item.finishDate))}</span>
       <strong>${escapeHtml(item.name)}</strong>
+      <p>${escapeHtml(assessment.summary)}</p>
       <em>${escapeHtml(executiveToneLabels[tone])}</em>
     </article>`;
   }).join("");
@@ -291,10 +299,12 @@ export function exportExecutiveRoadmapHtml(schedule: ProgrammeSchedule, tracker:
       <div class="sequence">
         ${[...path.dependencies, path.outcome].map((item) => {
           const tone = executiveTone(item);
+          const assessment = executiveToneAssessment(item);
           return `<article class="node ${tone}">
             <span>${escapeHtml(formatDate(item.finishDate))}</span>
             <i></i>
             <strong>${escapeHtml(item.name)}</strong>
+            <p>${escapeHtml(assessment.summary)}</p>
           </article>`;
         }).join("")}
       </div>
@@ -326,9 +336,10 @@ export function exportExecutiveRoadmapHtml(schedule: ProgrammeSchedule, tracker:
     .legend i { width: 14px; height: 14px; border-radius: 999px; background: var(--tone); }
     .legend p { flex-basis: 100%; font-size: 13px; }
     .milestones { grid-template-columns: repeat(${Math.max(1, model.outcomes.length)}, 1fr); margin-bottom: 28px; }
-    .milestone { min-height: 150px; padding: 18px; border-top: 7px solid var(--tone); }
+    .milestone { min-height: 185px; padding: 18px; border-top: 7px solid var(--tone); }
     .milestone span, .node span { color: #647269; font-weight: 800; }
-    .milestone strong { display: block; margin: 20px 0; font-size: 20px; line-height: 1.35; }
+    .milestone strong { display: block; margin: 20px 0 10px; font-size: 20px; line-height: 1.35; }
+    .milestone p, .node p { margin: 0 0 12px; color: #647269; font-size: 13px; line-height: 1.35; }
     .milestone em { display: inline-block; padding: 7px 10px; border-radius: 999px; color: white; background: var(--tone); font-style: normal; font-weight: 900; }
     .green { --tone: #2e7d55; } .blue { --tone: #3d78a9; } .amber { --tone: #ff8a00; } .red { --tone: #b33a32; } .grey { --tone: #7e8c84; }
     .path { margin-bottom: 16px; padding: 18px; break-inside: avoid; }
@@ -362,7 +373,7 @@ export function exportExecutiveRoadmapHtml(schedule: ProgrammeSchedule, tracker:
       <span class="amber"><i></i>At risk / date assumption</span>
       <span class="red"><i></i>Blocked / overdue</span>
       <span class="grey"><i></i>Not assessed</span>
-      <p>Amber includes target dates, unconfirmed supplier plans, external dependencies or decisions required.</p>
+      <p>Amber means the source RAG is Amber, the date is an assumption, or an external dependency lacks confirmed date confidence. Decision gates are shown as context, but they do not make an item Amber on their own.</p>
     </section>
     <section class="milestones">${milestoneCards}</section>
     ${pathRows}

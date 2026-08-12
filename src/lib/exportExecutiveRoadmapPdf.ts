@@ -2,6 +2,7 @@ import type { jsPDF as JsPDF } from "jspdf";
 import type { ProgrammeItem, ProgrammeSchedule } from "../types/programme";
 import type { TrackerData } from "../types/reporting";
 import { formatDate, parseDate } from "./dateUtils";
+import { executiveToneAssessment as assessExecutiveTone } from "./executiveRoadmapData";
 
 type DateWindow = {
   start?: Date;
@@ -206,27 +207,7 @@ function collectPredecessorDependencies(outcome: ProgrammeItem, byUid: Map<strin
 }
 
 function executiveTone(item?: ProgrammeItem): ExecutiveTone {
-  if (!item) return "grey";
-  const rag = normaliseText(item.ragStatus);
-  const confidence = normaliseText(item.dateConfidence);
-  const uncertainDate = Boolean(
-    confidence.includes("medium") ||
-      confidence.includes("low") ||
-      confidence.includes("tbc") ||
-      confidence.includes("unconfirmed") ||
-      confidence.includes("assumption") ||
-      confidence.includes("target") ||
-      confidence.includes("not yet confirmed"),
-  );
-  if (rag.includes("red")) return "red";
-  if (rag.includes("amber")) return "amber";
-  if (item.status === "blocked") return "red";
-  if (item.status === "complete") return "green";
-  if (uncertainDate || item.externalDependency || item.decisionRequired) return "amber";
-  if (rag.includes("green")) return "green";
-  if (confidence.includes("high") || confidence.includes("confirmed") || confidence.includes("credible")) return "green";
-  if (item.finishDate) return "blue";
-  return "grey";
+  return assessExecutiveTone(item).tone as ExecutiveTone;
 }
 
 function weeklySummaryDate(summary: { meetingDate?: string; weekEnding?: string; lastUpdated?: string }): Date | undefined {
@@ -390,20 +371,22 @@ export async function exportExecutiveRoadmapPdf({ schedule, tracker, dateWindow 
     dateWindow,
     "Executive milestones",
     y,
-    ["Date", "RAG", "Executive milestone", "Baseline", "Stream"],
+    ["Date", "RAG", "RAG reason", "Executive milestone", "Baseline", "Stream"],
     outcomes.map((item) => [
       formatDate(item.finishDate),
       executiveToneLabels[executiveTone(item)],
+      assessExecutiveTone(item).summary,
       item.name,
       formatDate(item.baselineFinish),
       item.stream ?? item.milestoneLevel ?? "-",
     ]),
     {
-      0: { cellWidth: 28, fontStyle: "bold" },
-      1: { cellWidth: 24, fontStyle: "bold" },
-      2: { cellWidth: 128, fontStyle: "bold" },
-      3: { cellWidth: 28 },
-      4: { cellWidth: 62 },
+      0: { cellWidth: 24, fontStyle: "bold" },
+      1: { cellWidth: 20, fontStyle: "bold" },
+      2: { cellWidth: 55 },
+      3: { cellWidth: 95, fontStyle: "bold" },
+      4: { cellWidth: 25 },
+      5: { cellWidth: 50 },
     },
   );
 
@@ -419,6 +402,7 @@ export async function exportExecutiveRoadmapPdf({ schedule, tracker, dateWindow 
         formatDate(item.finishDate),
         item.uid === outcome.uid ? "Executive outcome" : "Predecessor",
         executiveToneLabels[executiveTone(item)],
+        assessExecutiveTone(item).summary,
         item.name,
         direct || "-",
       ];
@@ -431,14 +415,15 @@ export async function exportExecutiveRoadmapPdf({ schedule, tracker, dateWindow 
       dateWindow,
       outcome.targetMilestone || outcome.name,
       y,
-      ["Date", "Type", "Status", "Item", "Immediate predecessors"],
+      ["Date", "Type", "Status", "RAG reason", "Item", "Immediate predecessors"],
       rows,
       {
-        0: { cellWidth: 26, fontStyle: "bold" },
-        1: { cellWidth: 34 },
-        2: { cellWidth: 26, fontStyle: "bold" },
-        3: { cellWidth: 102, fontStyle: "bold" },
-        4: { cellWidth: 81 },
+        0: { cellWidth: 24, fontStyle: "bold" },
+        1: { cellWidth: 28 },
+        2: { cellWidth: 22, fontStyle: "bold" },
+        3: { cellWidth: 52 },
+        4: { cellWidth: 75, fontStyle: "bold" },
+        5: { cellWidth: 68 },
       },
     );
   });

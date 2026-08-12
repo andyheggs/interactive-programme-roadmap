@@ -30,6 +30,13 @@ type ExecutivePathNode = {
   depth: number;
 };
 
+export type ExecutiveToneAssessment = {
+  tone: ExecutiveTone;
+  summary: string;
+  reasons: string[];
+  evidence: Array<{ label: string; value: string }>;
+};
+
 export const executiveToneLabels: Record<ExecutiveTone, string> = {
   green: "GREEN",
   blue: "PLANNED",
@@ -37,6 +44,30 @@ export const executiveToneLabels: Record<ExecutiveTone, string> = {
   red: "RED",
   grey: "NOT ASSESSED",
 };
+
+const uncertainDateTerms = [
+  "medium",
+  "low",
+  "tbc",
+  "unconfirmed",
+  "assumption",
+  "not yet confirmed",
+  "unknown",
+  "subject to",
+  "dependent on",
+  "supplier implementation",
+  "supplier plan",
+];
+
+const confirmedDateTerms = [
+  "actual",
+  "confirmed",
+  "credible",
+  "high",
+  "statutory",
+  "fixed",
+  "agreed",
+];
 
 export function normaliseText(value?: string): string {
   return (value ?? "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
@@ -65,6 +96,87 @@ export function meaningfulText(value?: string): string | undefined {
 
 export function bySoonest(a?: string, b?: string): number {
   return (parseDate(a)?.getTime() ?? Number.MAX_SAFE_INTEGER) - (parseDate(b)?.getTime() ?? Number.MAX_SAFE_INTEGER);
+}
+
+function includesAny(value: string, terms: string[]): boolean {
+  return terms.some((term) => value.includes(term));
+}
+
+function summariseAssessment(tone: ExecutiveTone, reasons: string[]): string {
+  const firstReason = reasons[0]?.replace(/\.$/, "");
+  if (tone === "amber") return firstReason ? `Amber because ${firstReason.toLowerCase()}.` : "Amber because the date or delivery position is uncertain.";
+  if (tone === "red") return firstReason ? `Red because ${firstReason.toLowerCase()}.` : "Red because the item is blocked, overdue or reported Red.";
+  if (tone === "green") return firstReason ? `Green because ${firstReason.toLowerCase()}.` : "Green because the item is complete, confirmed or reported Green.";
+  if (tone === "blue") return firstReason ? `Planned because ${firstReason.toLowerCase()}.` : "Planned because it has a dated forecast but no RAG concern.";
+  return firstReason ? `Not assessed because ${firstReason.toLowerCase()}.` : "Not assessed because no RAG or date confidence is captured.";
+}
+
+export function executiveToneAssessment(item?: ProgrammeItem): ExecutiveToneAssessment {
+  if (!item) {
+    return {
+      tone: "grey",
+      summary: "Not assessed because no project plan item is selected.",
+      reasons: ["No project plan item is selected."],
+      evidence: [],
+    };
+  }
+
+  const rag = normaliseText(item.ragStatus);
+  const confidence = normaliseText(item.dateConfidence);
+  const confirmedDate = includesAny(confidence, confirmedDateTerms);
+  const uncertainDate = Boolean(includesAny(confidence, uncertainDateTerms) || (!confirmedDate && confidence.includes("target")));
+  const evidence = [
+    meaningfulText(item.ragStatus) ? { label: "Plan RAG", value: meaningfulText(item.ragStatus)! } : undefined,
+    meaningfulText(item.dateConfidence) ? { label: "Date confidence", value: meaningfulText(item.dateConfidence)! } : undefined,
+    item.externalDependency ? { label: "External dependency", value: "Yes" } : undefined,
+    item.decisionRequired ? { label: "Decision required", value: "Yes" } : undefined,
+  ].filter((entry): entry is { label: string; value: string } => Boolean(entry));
+
+  let tone: ExecutiveTone = "grey";
+  const reasons: string[] = [];
+
+  if (rag.includes("red")) {
+    tone = "red";
+    reasons.push("Source RAG is Red");
+  } else if (item.status === "blocked") {
+    tone = "red";
+    reasons.push("Project status is blocked");
+  } else if (rag.includes("amber")) {
+    tone = "amber";
+    reasons.push("Source RAG is Amber");
+  } else if (uncertainDate) {
+    tone = "amber";
+    reasons.push(item.dateConfidence ? `Date confidence is "${item.dateConfidence}"` : "The forecast date is not confirmed");
+  } else if (item.externalDependency && !confirmedDate && !rag.includes("green")) {
+    tone = "amber";
+    reasons.push("Delivery depends on an external item and no confirmed date confidence is captured");
+  } else if (item.status === "complete") {
+    tone = "green";
+    reasons.push("Project status is complete");
+  } else if (rag.includes("green")) {
+    tone = "green";
+    reasons.push("Source RAG is Green");
+  } else if (confirmedDate) {
+    tone = "green";
+    reasons.push(item.dateConfidence ? `Date confidence is "${item.dateConfidence}"` : "Date confidence is confirmed");
+  } else if (item.finishDate) {
+    tone = "blue";
+    reasons.push("A forecast finish date is captured and no RAG concern is flagged");
+  } else {
+    reasons.push("No RAG status or date confidence is captured");
+  }
+
+  if (item.decisionRequired) reasons.push("Decision gate is flagged in the Project plan");
+  if (item.externalDependency && !reasons.some((reason) => reason.toLowerCase().includes("external"))) {
+    reasons.push("External dependency is flagged in the Project plan");
+  }
+
+  return {
+    tone,
+    summary: summariseAssessment(tone, reasons),
+    reasons,
+    evidence,
+  };
 }
 
 function weeklySummaryDate(summary: { meetingDate?: string; weekEnding?: string; lastUpdated?: string }): Date | undefined {
@@ -183,27 +295,7 @@ function collectPredecessorDependencies(outcome: ProgrammeItem, byUid: Map<strin
 }
 
 export function executiveTone(item?: ProgrammeItem): ExecutiveTone {
-  if (!item) return "grey";
-  const rag = normaliseText(item.ragStatus);
-  const confidence = normaliseText(item.dateConfidence);
-  const uncertainDate = Boolean(
-    confidence.includes("medium") ||
-      confidence.includes("low") ||
-      confidence.includes("tbc") ||
-      confidence.includes("unconfirmed") ||
-      confidence.includes("assumption") ||
-      confidence.includes("target") ||
-      confidence.includes("not yet confirmed"),
-  );
-  if (rag.includes("red")) return "red";
-  if (rag.includes("amber")) return "amber";
-  if (item.status === "blocked") return "red";
-  if (item.status === "complete") return "green";
-  if (uncertainDate || item.externalDependency || item.decisionRequired) return "amber";
-  if (rag.includes("green")) return "green";
-  if (confidence.includes("high") || confidence.includes("confirmed") || confidence.includes("credible")) return "green";
-  if (item.finishDate) return "blue";
-  return "grey";
+  return executiveToneAssessment(item).tone;
 }
 
 export function buildExecutiveRoadmapModel(schedule: ProgrammeSchedule, tracker: TrackerData | undefined, dateWindow: DateWindow): ExecutiveRoadmapModel {
