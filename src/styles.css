@@ -1319,6 +1319,253 @@ body.snapshot-exporting * {
 .exec-alert-dot.red {
   background: #f07d72;
 }
+
+.weekly-status {
+  display: grid;
+  gap: 16px;
+  padding: 18px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  box-shadow: 0 14px 34px rgba(23, 32, 27, 0.1);
+}
+.weekly-header {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 170px;
+  gap: 16px;
+  align-items: stretch;
+  padding: 20px;
+  border-radius: 8px;
+  color: white;
+  background: linear-gradient(135deg, #214c43, #315e9c);
+}
+.weekly-header h2 {
+  margin: 0 0 8px;
+  font-size: 1.7rem;
+}
+.weekly-header p {
+  max-width: 980px;
+  margin: 0;
+  color: rgba(255, 255, 255, 0.86);
+  line-height: 1.45;
+}
+.weekly-rag {
+  display: grid;
+  align-content: center;
+  gap: 8px;
+  padding: 16px;
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.24);
+}
+.weekly-rag span,
+.weekly-rag em,
+.weekly-kpis span {
+  font-size: 0.76rem;
+  font-style: normal;
+  font-weight: 900;
+  text-transform: uppercase;
+  opacity: 0.9;
+}
+.weekly-rag strong {
+  font-size: 1.7rem;
+}
+.weekly-kpis,
+.weekly-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+}
+.weekly-kpis article,
+.weekly-panel,
+.weekly-card {
+  min-width: 0;
+  padding: 16px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+}
+.weekly-kpis article {
+  display: grid;
+  align-content: space-between;
+  min-height: 104px;
+  background: linear-gradient(180deg, rgba(61, 120, 169, 0.1), transparent 70%), var(--surface);
+}
+.weekly-kpis strong {
+  color: var(--text-strong);
+  font-size: 1rem;
+  line-height: 1.25;
+}
+.weekly-focus {
+  display: grid;
+  grid-template-columns: 1fr 1fr 0.95fr;
+  gap: 12px;
+}
+.weekly-panel {
+  border-left: 6px solid #3d78a9;
+}
+.weekly-panel.weekly-ask {
+  border-left-color: #ff8a00;
+}
+.weekly-panel h3,
+.weekly-card h3 {
+  margin: 0 0 12px;
+  color: var(--text-strong);
+}
+.weekly-panel p,
+.weekly-card p {
+  margin: 0 0 10px;
+  color: var(--muted);
+  line-height: 1.42;
+}
+.weekly-panel p::before {
+  content: "";
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  margin: 0 8px 1px 0;
+  border-radius: 50%;
+  background: #3d78a9;
+}
+.weekly-grid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+.weekly-row {
+  display: grid;
+  gap: 4px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--border-soft);
+}
+.weekly-row:last-child {
+  border-bottom: 0;
+}
+.weekly-row span {
+  color: var(--active);
+  font-size: 0.78rem;
+  font-weight: 900;
+}
+.weekly-row strong {
+  color: var(--text-strong);
+  line-height: 1.28;
+}
+.weekly-row em {
+  color: var(--muted);
+  font-size: 0.8rem;
+  font-style: normal;
+}
+
+.team-actions-view {
+  display: grid;
+  gap: 14px;
+}
+.team-action-controls {
+  display: grid;
+  gap: 12px;
+  padding: 14px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+}
+.team-filter-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+}
+.team-filter-grid label {
+  display: grid;
+  gap: 6px;
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+.team-filter-grid select,
+.team-filter-grid input {
+  min-height: 38px;
+}
+.team-action-list {
+  display: grid;
+  gap: 10px;
+}
+.team-action-card {
+  border: 1px solid var(--border);
+  border-left: 7px solid #3d78a9;
+  border-radius: 8px;
+  background: var(--surface);
+  box-shadow: 0 8px 20px rgba(23, 32, 27, 0.07);
+}
+.team-action-card.action-overdue,
+.team-action-card.action-blocked {
+  border-left-color: #b33a32;
+}
+.team-action-card.action-due-soon {
+  border-left-color: #ff8a00;
+}
+.team-action-card.action-completed {
+  border-left-color: #2e7d55;
+}
+.team-action-card summary {
+  display: grid;
+  grid-template-columns: 120px minmax(0, 1.5fr) minmax(120px, 0.7fr) 92px 120px;
+  gap: 12px;
+  align-items: center;
+  padding: 13px 14px;
+  cursor: pointer;
+}
+.team-action-card summary::marker {
+  color: var(--muted);
+}
+.team-action-card summary strong {
+  color: var(--text-strong);
+  line-height: 1.25;
+}
+.team-action-card summary span,
+.team-action-card summary em {
+  color: var(--muted);
+  font-size: 0.82rem;
+  font-style: normal;
+  font-weight: 800;
+}
+.source-chip {
+  width: fit-content;
+  padding: 5px 8px;
+  border-radius: 999px;
+  color: var(--active-text) !important;
+  background: var(--active);
+}
+.team-action-detail {
+  display: grid;
+  gap: 12px;
+  padding: 0 14px 14px 146px;
+}
+.team-action-detail p {
+  margin: 0;
+  color: var(--muted);
+  line-height: 1.42;
+}
+.team-action-detail dl {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 8px;
+  margin: 0;
+}
+.team-action-detail dl div {
+  padding: 8px;
+  border: 1px solid var(--border-soft);
+  border-radius: 7px;
+  background: var(--surface-subtle);
+}
+.team-action-detail dt {
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+.team-action-detail dd {
+  margin: 4px 0 0;
+  color: var(--text-strong);
+  font-size: 0.82rem;
+  font-weight: 800;
+}
 .empty-panel {
   max-width: 860px;
   padding: 24px;
@@ -1397,7 +1644,15 @@ body.snapshot-exporting * {
   .exec-path-grid,
   .exec-detail-grid,
   .exec-bottom-grid,
-  .exec-watchlist-grid { grid-template-columns: 1fr; }
+  .exec-watchlist-grid,
+  .weekly-header,
+  .weekly-focus,
+  .weekly-grid,
+  .team-filter-grid,
+  .team-action-detail dl { grid-template-columns: 1fr; }
+  .weekly-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .team-action-card summary { grid-template-columns: 1fr; }
+  .team-action-detail { padding-left: 14px; }
   .exec-outcome-detail { min-height: 140px; }
 }
 
@@ -1411,6 +1666,7 @@ body.snapshot-exporting * {
   .page-intro { flex-direction: column; }
   .report-stat-grid, .report-grid.two, .workstream-grid, .download-grid { grid-template-columns: 1fr; }
   .snapshot-kpis,
+  .weekly-kpis,
   .snapshot-focus-grid,
   .snapshot-section-grid,
   .snapshot-list-compact { grid-template-columns: 1fr; }

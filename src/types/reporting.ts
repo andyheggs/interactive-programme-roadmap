@@ -79,6 +79,7 @@ export type TrackerAction = {
   owner?: string;
   priority?: string;
   dueDate?: string;
+  completionDate?: string;
   updateType?: string;
   latestUpdate?: string;
 };

@@ -66,6 +66,8 @@ type AppPage =
   | "workspace"
   | "home"
   | "ceo"
+  | "weekly-status"
+  | "team-actions"
   | "board"
   | "reporting-roadmap"
   | "risks"
@@ -82,6 +84,8 @@ const appPages: Array<{ key: AppPage; label: string; group: "core" | "reporting"
   { key: "workspace", label: "Roadmap Workspace", group: "core" },
   { key: "home", label: "Home Dashboard", group: "reporting" },
   { key: "ceo", label: "Executive View", group: "reporting" },
+  { key: "weekly-status", label: "Weekly Executive Status", group: "reporting" },
+  { key: "team-actions", label: "Team Action Tracker", group: "reporting" },
   { key: "board", label: "Board Report", group: "reporting" },
   { key: "reporting-roadmap", label: "Reporting Roadmap", group: "reporting" },
   { key: "risks", label: "Risks & Issues", group: "reporting" },
@@ -520,6 +524,97 @@ function latestWeeklySummary(tracker?: TrackerData) {
     .sort((a, b) => (parseDate(b.weekEnding)?.getTime() ?? 0) - (parseDate(a.weekEnding)?.getTime() ?? 0))[0];
 }
 
+function isCompleteStatus(status?: string): boolean {
+  return ["complete", "completed", "closed", "done", "resolved", "implemented"].includes(normaliseText(status));
+}
+
+function isBlockedStatus(status?: string): boolean {
+  const value = normaliseText(status);
+  return value.includes("block") || value.includes("hold");
+}
+
+function actionStatusGroup(item: TeamWorkItem): "open" | "due-soon" | "overdue" | "blocked" | "completed" {
+  if (isCompleteStatus(item.status)) return "completed";
+  if (isBlockedStatus(item.status)) return "blocked";
+  const due = parseDate(item.dueDate);
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  if (due && due < today) return "overdue";
+  if (due && due <= addDays(today, 14)) return "due-soon";
+  return "open";
+}
+
+function statusLabel(item: TeamWorkItem): string {
+  const group = actionStatusGroup(item);
+  if (group === "due-soon") return item.status ? `${item.status} / due soon` : "Due soon";
+  if (group === "overdue") return item.status ? `${item.status} / overdue` : "Overdue";
+  return item.status ?? "Not set";
+}
+
+function combineTeamWorkItems(schedule: ProgrammeSchedule, tracker?: TrackerData): TeamWorkItem[] {
+  const trackerItems: TeamWorkItem[] = (tracker?.actions ?? []).map((action) => ({
+    id: `tracker-${action.id}`,
+    source: "Tracker action",
+    title: action.title,
+    owner: action.owner,
+    stream: action.stream,
+    status: action.status,
+    priority: action.priority,
+    dueDate: action.dueDate,
+    completionDate: action.completionDate,
+    meetingDate: action.meetingDate,
+    description: action.description,
+    latestUpdate: action.latestUpdate,
+    links: [action.id, action.updateType].filter(Boolean).join(" · "),
+    dashboardFlag: action.dashboardFlag,
+  }));
+  const projectItems: TeamWorkItem[] = schedule.items
+    .filter((item) => !item.isSummary && item.isActive && item.resourceNames?.length)
+    .map((item) => ({
+      id: `project-${item.uid}`,
+      source: item.isMilestone ? "Project milestone" : "Project task",
+      title: item.name,
+      owner: item.resourceNames?.join(", "),
+      stream: item.stream,
+      status: item.status,
+      priority: item.isCritical ? "Critical" : item.roadmapMilestone ? "Roadmap milestone" : undefined,
+      dueDate: item.finishDate,
+      completionDate: isCompleteStatus(item.status) ? item.finishDate : undefined,
+      description: [item.milestoneType, item.approvalBody, item.dependencyLevel].filter(Boolean).join(" · "),
+      latestUpdate: item.delayDays && item.delayDays > 0 ? `${item.delayDays} days delayed against baseline` : undefined,
+      links: [item.id ? `Project ID ${item.id}` : undefined, item.wbs].filter(Boolean).join(" · "),
+      dashboardFlag: item.boardReportable || item.decisionRequired || item.roadmapMilestone,
+    }));
+  return [...trackerItems, ...projectItems];
+}
+
+function csvEscape(value?: string | number | boolean): string {
+  const text = value === undefined || value === null ? "" : String(value);
+  return /[",\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
+}
+
+function downloadTeamActionsCsv(items: TeamWorkItem[], schedule: ProgrammeSchedule) {
+  const header = ["Source", "Title", "Owner", "Workstream", "Status", "Priority", "Due date", "Completion date", "Notes"];
+  const rows = items.map((item) => [
+    item.source,
+    item.title,
+    item.owner,
+    item.stream,
+    statusLabel(item),
+    item.priority,
+    formatDate(item.dueDate),
+    formatDate(item.completionDate),
+    item.latestUpdate ?? item.description,
+  ]);
+  const csv = [header, ...rows].map((row) => row.map(csvEscape).join(",")).join("\n");
+  const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
+  const link = document.createElement("a");
+  link.href = URL.createObjectURL(blob);
+  link.download = `${schedule.title.replace(/[^a-z0-9]+/gi, "-").toLowerCase()}-team-actions.csv`;
+  link.click();
+  URL.revokeObjectURL(link.href);
+}
+
 function programmeMilestones(schedule: ProgrammeSchedule): ProgrammeItem[] {
   return schedule.items
     .filter((item) => item.isMilestone || item.roadmapMilestone)
@@ -543,6 +638,23 @@ type ExecutiveTone = "green" | "blue" | "amber" | "red" | "grey";
 type ExecutivePath = {
   outcome: ProgrammeItem;
   dependencies: ProgrammeItem[];
+};
+
+type TeamWorkItem = {
+  id: string;
+  source: "Tracker action" | "Project task" | "Project milestone";
+  title: string;
+  owner?: string;
+  stream?: string;
+  status?: string;
+  priority?: string;
+  dueDate?: string;
+  completionDate?: string;
+  meetingDate?: string;
+  description?: string;
+  latestUpdate?: string;
+  links?: string;
+  dashboardFlag?: boolean;
 };
 
 const executiveToneLabels: Record<ExecutiveTone, string> = {
@@ -1199,6 +1311,139 @@ function ExecutiveSnapshotView({
   );
 }
 
+function WeeklyExecutiveStatusView({
+  schedule,
+  tracker,
+  dateWindow,
+  onExportPdf,
+}: {
+  schedule: ProgrammeSchedule;
+  tracker?: TrackerData;
+  dateWindow: DateWindow;
+  onExportPdf: () => void;
+}) {
+  const weekly = latestWeeklySummary(tracker);
+  const reportingDate = weekly?.meetingDate ?? weekly?.weekEnding ?? new Date().toISOString();
+  const forwardWindow = { ...dateWindow, start: dateWindow.start ?? parseDate(reportingDate) };
+  const upcomingMilestones = programmeMilestones(schedule)
+    .filter((item) => isHighLevelMilestone(item) && isForwardLookingExecutiveItem(item, forwardWindow))
+    .sort((a, b) => bySoonest(a.finishDate, b.finishDate))
+    .slice(0, 5);
+  const keyChanges = (tracker?.changes ?? [])
+    .filter((change) => change.dashboardFlag || isOpenStatus(change.status))
+    .sort((a, b) => (parseDate(b.lastDiscussedDate ?? b.dateRaised)?.getTime() ?? 0) - (parseDate(a.lastDiscussedDate ?? a.dateRaised)?.getTime() ?? 0))
+    .slice(0, 3);
+  const risksIssues = sortFlaggedFirst([
+    ...openRisks(tracker)
+      .filter((risk) => risk.dashboardFlag || isRedOrAmber(risk.rag))
+      .map((risk) => ({ id: `risk-${risk.id}`, title: risk.title, meta: risk.latestUpdate ?? risk.mitigation ?? risk.impact ?? "", status: risk.rag ?? risk.status, stream: risk.stream, dashboardFlag: risk.dashboardFlag })),
+    ...openIssues(tracker)
+      .filter((issue) => issue.dashboardFlag || isRedOrAmber(issue.rag) || isRedOrAmber(issue.priority))
+      .map((issue) => ({ id: `issue-${issue.id}`, title: issue.title, meta: issue.latestUpdate ?? issue.requiredAction ?? issue.impact ?? "", status: issue.rag ?? issue.priority ?? issue.status, stream: issue.stream, dashboardFlag: issue.dashboardFlag })),
+  ]).slice(0, 5);
+  const decisions = openDecisions(tracker)
+    .filter((decision) => decision.dashboardFlag || normaliseText(decision.status).includes("pending") || normaliseText(decision.decisionType).includes("required"))
+    .sort((a, b) => bySoonest(a.decisionRequiredBy ?? a.decisionDate, b.decisionRequiredBy ?? b.decisionDate))
+    .slice(0, 5);
+  const ragTone = toneClass(weekly?.overallRag);
+
+  return (
+    <>
+      <div id="weekly-status-export" className={`weekly-status weekly-${ragTone}`}>
+        <header className="weekly-header">
+          <div>
+            <span className="snapshot-eyebrow">Weekly executive status</span>
+            <h2>DAF Programme Delivery</h2>
+            <p>{weekly?.openingLine ?? weekly?.ragRationale ?? "Import the latest tracker to populate the weekly status update."}</p>
+          </div>
+          <div className="weekly-rag">
+            <span>Overall RAG</span>
+            <strong>{weekly?.overallRag ?? "Not set"}</strong>
+            <em>{formatDate(reportingDate)}</em>
+          </div>
+        </header>
+
+        <section className="weekly-kpis">
+          <article>
+            <span>Movement</span>
+            <strong>{weekly?.ragMovement ?? "Not set"}</strong>
+          </article>
+          <article>
+            <span>Go-live confidence</span>
+            <strong>{weekly?.goLiveConfidence ?? "Not set"}</strong>
+          </article>
+          <article>
+            <span>Main blocker</span>
+            <strong>{weekly?.mainBlocker ?? risksIssues[0]?.title ?? "None flagged"}</strong>
+          </article>
+          <article>
+            <span>Next key date</span>
+            <strong>{upcomingMilestones[0] ? `${formatDate(upcomingMilestones[0].finishDate)} - ${upcomingMilestones[0].name}` : "None in window"}</strong>
+          </article>
+        </section>
+
+        <section className="weekly-focus">
+          <article className="weekly-panel">
+            <h3>Last week</h3>
+            {[...splitDigest(weekly?.keyProgress, 4), ...splitDigest(weekly?.whatChanged, 2)].slice(0, 5).map((item) => <p key={item}>{item}</p>)}
+            {!weekly?.keyProgress && !weekly?.whatChanged ? <p>No weekly progress summary found.</p> : null}
+          </article>
+          <article className="weekly-panel">
+            <h3>This week / next</h3>
+            {splitDigest(weekly?.priorityActions, 5).map((item) => <p key={item}>{item}</p>)}
+            {!weekly?.priorityActions ? <p>No priority actions summary found.</p> : null}
+          </article>
+          <article className="weekly-panel weekly-ask">
+            <h3>Leadership ask</h3>
+            <p>{weekly?.askSteerNeeded ?? weekly?.decisionsNeeded ?? decisions[0]?.title ?? "No current leadership ask flagged."}</p>
+          </article>
+        </section>
+
+        <section className="weekly-grid">
+          <article className="weekly-card">
+            <h3>Key dates</h3>
+            {upcomingMilestones.map((item) => (
+              <div className="weekly-row" key={item.uid}>
+                <span>{formatDate(item.finishDate)}</span>
+                <strong>{item.name}</strong>
+                <em>{item.stream ?? item.milestoneLevel ?? "Milestone"}</em>
+              </div>
+            ))}
+            {!upcomingMilestones.length ? <p>No upcoming high-level dates found in the selected date window.</p> : null}
+          </article>
+          <article className="weekly-card">
+            <h3>Risks / issues</h3>
+            {risksIssues.map((item) => (
+              <div className="weekly-row" key={item.id}>
+                <span>{item.status ?? "Open"}</span>
+                <strong>{item.title}</strong>
+                <em>{item.stream ?? item.meta}</em>
+              </div>
+            ))}
+            {!risksIssues.length ? <p>No dashboard or red/amber risks or issues currently flagged.</p> : null}
+          </article>
+          <article className="weekly-card">
+            <h3>Decisions / changes</h3>
+            {[...decisions.map((decision) => ({ id: decision.id, title: decision.title, meta: decision.decisionMaker ?? decision.owner ?? decision.status, date: decision.decisionRequiredBy ?? decision.decisionDate })), ...keyChanges.map((change) => ({ id: change.id, title: change.title, meta: change.decisionRequired ?? change.impactOnTime ?? change.latestUpdate, date: change.lastDiscussedDate ?? change.dateRaised }))].slice(0, 5).map((item) => (
+              <div className="weekly-row" key={item.id}>
+                <span>{formatDate(item.date)}</span>
+                <strong>{item.title}</strong>
+                <em>{item.meta}</em>
+              </div>
+            ))}
+          </article>
+        </section>
+      </div>
+      <div className="snapshot-actions">
+        <button className="download-action" type="button" onClick={onExportPdf}>
+          <Download size={15} />
+          Download Weekly Status PDF
+        </button>
+      </div>
+    </>
+  );
+}
+
 function BoardReportView({ schedule, tracker, dateWindow }: { schedule: ProgrammeSchedule; tracker?: TrackerData; dateWindow: DateWindow }) {
   const weekly = latestWeeklySummary(tracker);
   const weeklyByDate = tracker?.weeklySummaries
@@ -1267,6 +1512,144 @@ function ActionsDecisionsView({ schedule, tracker, dateWindow }: { schedule: Pro
         <ItemList title="Decisions Needed" items={decisions.sort((a, b) => bySoonest(a.decisionRequiredBy, b.decisionRequiredBy)).map((decision) => ({ id: decision.id, title: decision.title, meta: `${formatDate(decision.decisionRequiredBy)} · ${decision.decisionMaker ?? decision.owner ?? "No owner"}`, status: decision.status }))} />
         <ItemList title="Approval Gates from Plan" items={approvalGates.slice(0, 8).map((item) => ({ id: item.uid, title: item.name, meta: `${formatDate(item.finishDate)} · ${item.approvalBody ?? "Governance gate"}`, status: item.status }))} />
         <ItemList title="This Week's Priority Actions" items={openActions(tracker).filter((action) => action.dashboardFlag).map((action) => ({ id: action.id, title: action.title, meta: `${formatDate(action.dueDate)} · ${action.owner ?? "No owner"}`, status: action.status }))} />
+      </div>
+    </>
+  );
+}
+
+function TeamActionTrackerView({
+  schedule,
+  tracker,
+  dateWindow,
+  onExportPdf,
+}: {
+  schedule: ProgrammeSchedule;
+  tracker?: TrackerData;
+  dateWindow: DateWindow;
+  onExportPdf: () => void;
+}) {
+  const [statusTab, setStatusTab] = useState<"open" | "due-soon" | "overdue" | "blocked" | "completed" | "all">("open");
+  const [owner, setOwner] = useState("all");
+  const [source, setSource] = useState("all");
+  const [stream, setStream] = useState("all");
+  const [search, setSearch] = useState("");
+  const allItems = combineTeamWorkItems(schedule, tracker);
+  const owners = uniqueSorted(allItems.flatMap((item) => item.owner?.split("/") ?? []).map((value) => value.trim()).filter(Boolean));
+  const streams = uniqueSorted(allItems.map((item) => item.stream));
+  const sources = uniqueSorted(allItems.map((item) => item.source));
+  const filtered = allItems
+    .filter((item) => {
+      const group = actionStatusGroup(item);
+      const dateForWindow = group === "completed" ? item.completionDate ?? item.dueDate ?? item.meetingDate : item.dueDate ?? item.meetingDate;
+      if (statusTab !== "all" && statusTab === "open" && group === "completed") return false;
+      if (statusTab !== "all" && statusTab !== "open" && group !== statusTab) return false;
+      if (owner !== "all" && !normaliseText(item.owner).includes(normaliseText(owner))) return false;
+      if (source !== "all" && item.source !== source) return false;
+      if (stream !== "all" && item.stream !== stream) return false;
+      if (search && !normaliseText(`${item.title} ${item.description} ${item.latestUpdate} ${item.owner} ${item.stream}`).includes(normaliseText(search))) return false;
+      if (!dateWithin(dateForWindow, dateWindow)) return false;
+      return true;
+    })
+    .sort((a, b) => bySoonest(a.dueDate, b.dueDate) || a.title.localeCompare(b.title));
+  const counts = {
+    open: allItems.filter((item) => actionStatusGroup(item) !== "completed").length,
+    dueSoon: allItems.filter((item) => actionStatusGroup(item) === "due-soon").length,
+    overdue: allItems.filter((item) => actionStatusGroup(item) === "overdue").length,
+    blocked: allItems.filter((item) => actionStatusGroup(item) === "blocked").length,
+    completed: allItems.filter((item) => actionStatusGroup(item) === "completed").length,
+  };
+
+  return (
+    <>
+      <div id="team-actions-export" className="team-actions-view">
+        <PageIntro title="Team Action Tracker" tracker={tracker}>A combined operational view of meeting actions and assigned Project plan tasks or milestones.</PageIntro>
+        <StatGrid cards={[
+          ["Open / needs doing", counts.open.toString()],
+          ["Due soon", counts.dueSoon.toString(), counts.dueSoon ? "warn" : ""],
+          ["Overdue", counts.overdue.toString(), counts.overdue ? "warn" : ""],
+          ["Completed", counts.completed.toString()],
+        ]} />
+
+        <section className="team-action-controls">
+          <div className="tabs">
+            {[
+              ["open", "Open"],
+              ["due-soon", "Due soon"],
+              ["overdue", "Overdue"],
+              ["blocked", "Blocked"],
+              ["completed", "Completed"],
+              ["all", "All"],
+            ].map(([key, label]) => (
+              <button type="button" className={statusTab === key ? "active" : ""} onClick={() => setStatusTab(key as typeof statusTab)} key={key}>{label}</button>
+            ))}
+          </div>
+          <div className="team-filter-grid">
+            <label>
+              Owner
+              <select value={owner} onChange={(event) => setOwner(event.target.value)}>
+                <option value="all">All owners</option>
+                {owners.map((value) => <option key={value} value={value}>{value}</option>)}
+              </select>
+            </label>
+            <label>
+              Source
+              <select value={source} onChange={(event) => setSource(event.target.value)}>
+                <option value="all">All sources</option>
+                {sources.map((value) => <option key={value} value={value}>{value}</option>)}
+              </select>
+            </label>
+            <label>
+              Workstream
+              <select value={stream} onChange={(event) => setStream(event.target.value)}>
+                <option value="all">All workstreams</option>
+                {streams.map((value) => <option key={value} value={value}>{value}</option>)}
+              </select>
+            </label>
+            <label>
+              Search
+              <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Action, task, owner..." />
+            </label>
+          </div>
+        </section>
+
+        <section className="team-action-list">
+          {filtered.map((item) => {
+            const group = actionStatusGroup(item);
+            return (
+              <details className={`team-action-card action-${group}`} key={item.id}>
+                <summary>
+                  <span className="source-chip">{item.source}</span>
+                  <strong>{item.title}</strong>
+                  <span>{item.owner ?? "No owner"}</span>
+                  <span>{formatDate(item.dueDate)}</span>
+                  <em>{statusLabel(item)}</em>
+                </summary>
+                <div className="team-action-detail">
+                  <p>{item.description || "No detailed description held."}</p>
+                  {item.latestUpdate ? <p><strong>Latest update:</strong> {item.latestUpdate}</p> : null}
+                  <dl>
+                    <div><dt>Workstream</dt><dd>{item.stream ?? "Not set"}</dd></div>
+                    <div><dt>Priority</dt><dd>{item.priority ?? "Not set"}</dd></div>
+                    <div><dt>Meeting/log date</dt><dd>{formatDate(item.meetingDate)}</dd></div>
+                    <div><dt>Completion date</dt><dd>{item.completionDate ? formatDate(item.completionDate) : "Not held"}</dd></div>
+                    <div><dt>Links</dt><dd>{item.links || "None"}</dd></div>
+                  </dl>
+                </div>
+              </details>
+            );
+          })}
+          {!filtered.length ? <article className="empty-panel"><h2>No actions found</h2><p>Adjust the status, owner, source, workstream or date window filters.</p></article> : null}
+        </section>
+      </div>
+      <div className="snapshot-actions">
+        <button className="download-action" type="button" onClick={onExportPdf}>
+          <Download size={15} />
+          Download Actions PDF
+        </button>
+        <button className="download-action" type="button" onClick={() => downloadTeamActionsCsv(filtered, schedule)}>
+          <Download size={15} />
+          Download CSV
+        </button>
       </div>
     </>
   );
@@ -1441,6 +1824,8 @@ function ReportingContent({
   onExportPosterPdf,
   onExportJson,
   onExportSnapshotPdf,
+  onExportWeeklyStatusPdf,
+  onExportTeamActionsPdf,
 }: {
   page: AppPage;
   schedule: ProgrammeSchedule;
@@ -1452,9 +1837,13 @@ function ReportingContent({
   onExportPosterPdf: () => void;
   onExportJson: () => void;
   onExportSnapshotPdf: () => void;
+  onExportWeeklyStatusPdf: () => void;
+  onExportTeamActionsPdf: () => void;
 }) {
   if (page === "home") return <HomeDashboard schedule={schedule} tracker={tracker} dateWindow={dateWindow} />;
   if (page === "ceo") return <ExecutiveSnapshotView schedule={schedule} tracker={tracker} dateWindow={dateWindow} onExportSnapshotPdf={onExportSnapshotPdf} />;
+  if (page === "weekly-status") return <WeeklyExecutiveStatusView schedule={schedule} tracker={tracker} dateWindow={dateWindow} onExportPdf={onExportWeeklyStatusPdf} />;
+  if (page === "team-actions") return <TeamActionTrackerView schedule={schedule} tracker={tracker} dateWindow={dateWindow} onExportPdf={onExportTeamActionsPdf} />;
   if (page === "board") return <BoardReportView schedule={schedule} tracker={tracker} dateWindow={dateWindow} />;
   if (page === "reporting-roadmap") return <ReportingRoadmapView schedule={schedule} dateWindow={dateWindow} selected={selected} onSelect={setSelected} />;
   if (page === "risks") return <RisksIssuesView tracker={tracker} />;
@@ -1635,6 +2024,36 @@ function App() {
     }
   }
 
+  async function exportWeeklyStatusPdf() {
+    setError(undefined);
+    try {
+      const element = document.getElementById("weekly-status-export");
+      if (!element) throw new Error("Open the Weekly Executive Status page before exporting the weekly status.");
+      await exportElementPdf({
+        element,
+        title: schedule.title,
+        fileNameSuffix: "weekly-executive-status",
+      });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "The Weekly Executive Status PDF could not be generated.");
+    }
+  }
+
+  async function exportTeamActionsPdf() {
+    setError(undefined);
+    try {
+      const element = document.getElementById("team-actions-export");
+      if (!element) throw new Error("Open the Team Action Tracker page before exporting actions.");
+      await exportElementPdf({
+        element,
+        title: schedule.title,
+        fileNameSuffix: "team-actions",
+      });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "The Team Action Tracker PDF could not be generated.");
+    }
+  }
+
   return (
     <main>
       <header className="app-header">
@@ -1716,6 +2135,8 @@ function App() {
             onExportPosterPdf={exportPosterPdf}
             onExportJson={exportJson}
             onExportSnapshotPdf={exportExecutiveSnapshotPdf}
+            onExportWeeklyStatusPdf={exportWeeklyStatusPdf}
+            onExportTeamActionsPdf={exportTeamActionsPdf}
           />
         </section>
       )}

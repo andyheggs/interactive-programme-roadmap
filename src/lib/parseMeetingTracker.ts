@@ -160,7 +160,7 @@ export async function parseMeetingTracker(file: File): Promise<TrackerData> {
   const actions: TrackerAction[] = makeRows(workbook, "Actions")
     .map((row) => ({
       id: rowValue(row, "Action ID") ?? "",
-      meetingDate: rowDate(row, "Meeting date"),
+      meetingDate: rowDate(row, "Meeting date", "Meeting/Log date", "Log date"),
       dashboardFlag: rowFlag(row, "Dashboard Tag", "Dashboard Flag"),
       stream: rowValue(row, "Workstream"),
       title: rowValue(row, "Action title") ?? "",
@@ -168,7 +168,8 @@ export async function parseMeetingTracker(file: File): Promise<TrackerData> {
       status: rowValue(row, "Status"),
       owner: rowValue(row, "Owner"),
       priority: rowValue(row, "Priority"),
-      dueDate: rowDate(row, "Due date"),
+      dueDate: rowDate(row, "Due date", "Target date"),
+      completionDate: rowDate(row, "Completion date", "Completed date", "Date completed", "Closed date"),
       updateType: rowValue(row, "Update type"),
       latestUpdate: rowValue(row, "Latest update"),
     }))
