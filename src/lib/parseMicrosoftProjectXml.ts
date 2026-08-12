@@ -207,6 +207,7 @@ function applyCustomFields(
     ) item[fieldName] = asBool(raw);
     else if (raw && raw !== "None" && raw !== "N/A") (item[fieldName] as string | boolean | undefined) = raw;
   });
+  if (normaliseFieldLabel(item.milestoneLevel) === "executive milestone") item.executiveMilestone = true;
   return item;
 }
 

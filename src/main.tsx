@@ -772,7 +772,7 @@ function normaliseText(value?: string): string {
 
 function executiveMilestoneItems(schedule: ProgrammeSchedule): ProgrammeItem[] {
   const executive = schedule.items
-    .filter((item) => item.executiveMilestone)
+    .filter((item) => item.executiveMilestone || normaliseText(item.milestoneLevel) === "executive milestone")
     .sort((a, b) => bySoonest(a.finishDate, b.finishDate));
   if (executive.length) return executive;
   return programmeMilestones(schedule).filter((item) => itemImportance(item) >= 4).slice(0, 5);
