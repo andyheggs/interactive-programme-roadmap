@@ -1902,6 +1902,7 @@ function GanttChart({
           const tone = ganttTone(item);
           const isSelected = selected?.uid === item.uid;
           const isPredecessor = predecessorIds.has(item.uid);
+          const progress = clamp(item.percentComplete ?? 0, 0, 100);
           const rowClass = `${isSelected ? "selected" : ""} ${isPredecessor ? "dependency-predecessor" : ""} ${item.isSummary ? "summary" : ""}`;
           return (
             <React.Fragment key={item.uid}>
@@ -1935,6 +1936,7 @@ function GanttChart({
                   onClick={() => onSelect(item)}
                   title={`${item.name} · ${formatDate(item.startDate)} to ${formatDate(item.finishDate)}`}
                 >
+                  {!item.isMilestone ? <i className="gantt-progress" style={{ width: `${progress}%` }} /> : null}
                   <span>{item.isMilestone ? formatDate(item.finishDate) : `${formatDate(item.startDate)} - ${formatDate(item.finishDate)}`}</span>
                 </button>
               </div>
@@ -1951,7 +1953,7 @@ function GanttChart({
           >
             <defs>
               <marker id="gantt-arrow-head" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="5" markerHeight="5" orient="auto-start-reverse">
-                <path d="M 0 0 L 8 4 L 0 8 z" fill="#2d5366" />
+                <path d="M 0 0 L 8 4 L 0 8 z" fill="#2f6380" />
               </marker>
               <marker id="gantt-arrow-head-selected" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="5" markerHeight="5" orient="auto-start-reverse">
                 <path d="M 0 0 L 8 4 L 0 8 z" fill="#8f5c00" />

@@ -1928,7 +1928,7 @@ body.executive-export-light .executive-roadmap {
   width: 22px;
   height: 3px;
   border-radius: 0;
-  background: #2d5366;
+  background: #2f6380;
 }
 .gantt-key.arrow::after {
   content: "";
@@ -1939,7 +1939,7 @@ body.executive-export-light .executive-roadmap {
   height: 0;
   border-top: 5px solid transparent;
   border-bottom: 5px solid transparent;
-  border-left: 7px solid #2d5366;
+  border-left: 7px solid #2f6380;
   transform: translateY(-50%);
 }
 .gantt-arrow-toggle {
@@ -2103,15 +2103,15 @@ body.executive-export-light .executive-roadmap {
 }
 .gantt-link-layer path {
   fill: none;
-  stroke: rgba(45, 83, 102, 0.84);
+  stroke: rgba(47, 99, 128, 0.95);
   stroke-linecap: square;
   stroke-linejoin: round;
-  stroke-width: 1.1;
+  stroke-width: 1.6;
   vector-effect: non-scaling-stroke;
 }
 .gantt-link-layer path.selected {
   stroke: #8f5c00;
-  stroke-width: 1.5;
+  stroke-width: 2;
 }
 .gantt-bar {
   position: absolute;
@@ -2126,7 +2126,37 @@ body.executive-export-light .executive-roadmap {
   cursor: pointer;
   box-shadow: 0 5px 12px rgba(23, 32, 27, 0.16);
 }
-.gantt-bar.summary { height: 12px; background: #255349; }
+.gantt-progress {
+  position: absolute;
+  top: 4px;
+  left: 0;
+  bottom: 4px;
+  min-width: 0;
+  border-radius: inherit;
+  background: rgba(15, 39, 68, 0.56);
+}
+.gantt-bar.summary {
+  height: 12px;
+  border-radius: 2px 2px 0 0;
+  background: #255349;
+}
+.gantt-bar.summary::before,
+.gantt-bar.summary::after {
+  content: "";
+  position: absolute;
+  bottom: -6px;
+  width: 0;
+  height: 0;
+  border-top: 7px solid #255349;
+}
+.gantt-bar.summary::before {
+  left: 0;
+  border-right: 7px solid transparent;
+}
+.gantt-bar.summary::after {
+  right: 0;
+  border-left: 7px solid transparent;
+}
 .gantt-bar.complete { background: #2e7d55; }
 .gantt-bar.risk { background: #ff8a00; }
 .gantt-bar.late { background: #b33a32; }
