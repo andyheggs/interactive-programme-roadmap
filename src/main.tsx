@@ -1072,19 +1072,20 @@ function executivePathRelevance(node: ExecutivePathNode): number {
   return score;
 }
 
-function collectPredecessorDependencies(outcome: ProgrammeItem, byUid: Map<string, ProgrammeItem>): ProgrammeItem[] {
+function collectPredecessorDependencies(outcome: ProgrammeItem, byUid: Map<string, ProgrammeItem>, window: DateWindow): ProgrammeItem[] {
   const chain = collectPredecessorChainWithDepth(outcome, byUid);
   return chain
     .filter((node) => visibleExecutivePathItem(node.item))
+    .filter((node) => isForwardLookingExecutiveItem(node.item, window))
     .sort((a, b) => bySoonest(a.item.finishDate, b.item.finishDate) || a.depth - b.depth)
     .map((node) => node.item);
 }
 
-function executiveDependencyPaths(schedule: ProgrammeSchedule): ExecutivePath[] {
+function executiveDependencyPaths(schedule: ProgrammeSchedule, window: DateWindow): ExecutivePath[] {
   const outcomes = executiveMilestoneItems(schedule);
   const byUid = new Map(schedule.items.map((item) => [item.uid, item]));
   return outcomes.map((outcome) => {
-    const dependencies = collectPredecessorDependencies(outcome, byUid);
+    const dependencies = collectPredecessorDependencies(outcome, byUid, window);
     return { outcome, dependencies };
   });
 }
@@ -1303,7 +1304,7 @@ function ExecutiveSnapshotView({
   const reportingDate = new Date().toISOString();
   const executiveWindow = { label: dateWindow.label, start: dateWindow.start ?? parseDate(reportingDate) };
   const allExecutiveOutcomes = executiveMilestoneItems(schedule);
-  const paths = executiveDependencyPaths(schedule)
+  const paths = executiveDependencyPaths(schedule, executiveWindow)
     .filter((path) => isForwardLookingExecutiveItem(path.outcome, executiveWindow));
   const deliveredMilestones = programmeMilestones(schedule)
     .filter((item) => isHighLevelMilestone(item) && isHistoricDeliveredItem(item, executiveWindow))

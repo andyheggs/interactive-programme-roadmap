@@ -214,10 +214,11 @@ function closestDirectPredecessors(item: ProgrammeItem, byUid: Map<string, Progr
     .sort((a, b) => bySoonest(a.finishDate, b.finishDate));
 }
 
-function collectPredecessorDependencies(outcome: ProgrammeItem, byUid: Map<string, ProgrammeItem>): ProgrammeItem[] {
+function collectPredecessorDependencies(outcome: ProgrammeItem, byUid: Map<string, ProgrammeItem>, windowStart?: Date): ProgrammeItem[] {
   const chain = collectPredecessorChainWithDepth(outcome, byUid);
   return chain
     .filter((node) => visibleExecutivePathItem(node.item))
+    .filter((node) => !isHistoricDeliveredItem(node.item, windowStart))
     .sort((a, b) => bySoonest(a.item.finishDate, b.item.finishDate) || a.depth - b.depth)
     .map((node) => node.item);
 }
@@ -407,7 +408,7 @@ export async function exportExecutiveRoadmapPdf({ schedule, tracker, dateWindow 
   );
 
   outcomes.forEach((outcome) => {
-    const dependencies = collectPredecessorDependencies(outcome, byUid);
+    const dependencies = collectPredecessorDependencies(outcome, byUid, windowStart);
     const rows = [...dependencies, outcome].map((item) => {
       const direct = closestDirectPredecessors(item, byUid, 2)
         .map((predecessor) => predecessor.name)

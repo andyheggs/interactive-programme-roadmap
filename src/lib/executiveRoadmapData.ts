@@ -288,9 +288,10 @@ function collectPredecessorChainWithDepth(outcome: ProgrammeItem, byUid: Map<str
   return [...found.values()];
 }
 
-function collectPredecessorDependencies(outcome: ProgrammeItem, byUid: Map<string, ProgrammeItem>): ProgrammeItem[] {
+function collectPredecessorDependencies(outcome: ProgrammeItem, byUid: Map<string, ProgrammeItem>, windowStart?: Date): ProgrammeItem[] {
   return collectPredecessorChainWithDepth(outcome, byUid)
     .filter((node) => visibleExecutivePathItem(node.item))
+    .filter((node) => !isHistoricDeliveredItem(node.item, windowStart))
     .sort((a, b) => bySoonest(a.item.finishDate, b.item.finishDate) || a.depth - b.depth)
     .map((node) => node.item);
 }
@@ -316,7 +317,7 @@ export function buildExecutiveRoadmapModel(schedule: ProgrammeSchedule, tracker:
     outcomes,
     paths: outcomes.map((outcome) => ({
       outcome,
-      dependencies: collectPredecessorDependencies(outcome, byUid),
+      dependencies: collectPredecessorDependencies(outcome, byUid, windowStart),
     })),
   };
 }
