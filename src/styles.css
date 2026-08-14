@@ -864,10 +864,17 @@ body.executive-export-light .executive-roadmap {
   gap: 8px;
   min-width: 0;
   padding: 14px;
-  border: 1px solid var(--exec-line);
+  border: 1px solid var(--programme-border, var(--exec-line));
   border-radius: 8px;
-  background: var(--exec-panel);
+  background: var(--programme-bg, var(--exec-panel));
 }
+.exec-programme-strip article.exec-programme-status {
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.04);
+}
+.exec-programme-status.green { --programme-bg: rgba(25, 122, 85, 0.28); --programme-border: #87d695; }
+.exec-programme-status.amber { --programme-bg: rgba(255, 138, 0, 0.26); --programme-border: #ffd166; }
+.exec-programme-status.red { --programme-bg: rgba(196, 59, 69, 0.3); --programme-border: #ff8b92; }
+.exec-programme-status.grey { --programme-bg: rgba(116, 124, 132, 0.28); --programme-border: #9aa1aa; }
 .exec-programme-strip span {
   color: var(--exec-muted);
   font-size: 0.74rem;
@@ -969,7 +976,9 @@ body.executive-export-light .executive-roadmap {
   border-radius: 8px;
   color: var(--exec-text);
   text-align: left;
-  background: var(--exec-panel);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.035), transparent 72%),
+    var(--card-bg, var(--exec-panel));
   box-shadow: 0 12px 26px rgba(0, 0, 0, 0.2);
   cursor: pointer;
 }
@@ -993,16 +1002,25 @@ body.executive-export-light .executive-roadmap {
   background: var(--badge-bg, rgba(116, 124, 132, 0.24));
   font-size: 0.78rem;
 }
-.exec-outcome-summary.green { --tone: #87d695; --badge-bg: rgba(25, 122, 85, 0.28); --badge-text: #9de6ad; }
-.exec-outcome-summary.blue { --tone: #87bdf5; --badge-bg: rgba(37, 109, 168, 0.28); --badge-text: #9bcfff; }
-.exec-outcome-summary.amber { --tone: #ffd166; --badge-bg: rgba(255, 138, 0, 0.22); --badge-text: #ffd166; }
-.exec-outcome-summary.red { --tone: #ff8b92; --badge-bg: rgba(196, 59, 69, 0.26); --badge-text: #ffb0b5; }
-.exec-outcome-summary.grey { --tone: #9aa1aa; --badge-bg: rgba(116, 124, 132, 0.26); --badge-text: #cbd1d8; }
+.exec-outcome-summary.green { --tone: #87d695; --card-bg: rgba(25, 122, 85, 0.22); --badge-bg: rgba(25, 122, 85, 0.36); --badge-text: #9de6ad; }
+.exec-outcome-summary.blue { --tone: #87bdf5; --card-bg: rgba(37, 109, 168, 0.22); --badge-bg: rgba(37, 109, 168, 0.36); --badge-text: #9bcfff; }
+.exec-outcome-summary.amber { --tone: #ffd166; --card-bg: rgba(255, 138, 0, 0.2); --badge-bg: rgba(255, 138, 0, 0.3); --badge-text: #ffd166; }
+.exec-outcome-summary.red { --tone: #ff8b92; --card-bg: rgba(196, 59, 69, 0.24); --badge-bg: rgba(196, 59, 69, 0.34); --badge-text: #ffb0b5; }
+.exec-outcome-summary.grey { --tone: #9aa1aa; --card-bg: rgba(116, 124, 132, 0.22); --badge-bg: rgba(116, 124, 132, 0.34); --badge-text: #cbd1d8; }
 :root:not([data-theme="dark"]) .exec-outcome-summary.green { --badge-text: #1f704b; }
 :root:not([data-theme="dark"]) .exec-outcome-summary.blue { --badge-text: #245f8f; }
 :root:not([data-theme="dark"]) .exec-outcome-summary.amber { --badge-text: #8f4e00; }
 :root:not([data-theme="dark"]) .exec-outcome-summary.red { --badge-text: #a32d26; }
 :root:not([data-theme="dark"]) .exec-outcome-summary.grey { --badge-text: #5c6962; }
+:root:not([data-theme="dark"]) .exec-programme-status.green { --programme-bg: #e7f5ed; --programme-border: #2e7d55; }
+:root:not([data-theme="dark"]) .exec-programme-status.amber { --programme-bg: #fff0d2; --programme-border: #ff8a00; }
+:root:not([data-theme="dark"]) .exec-programme-status.red { --programme-bg: #ffe7e5; --programme-border: #b33a32; }
+:root:not([data-theme="dark"]) .exec-programme-status.grey { --programme-bg: #edf1ef; --programme-border: #7e8c84; }
+:root:not([data-theme="dark"]) .exec-outcome-summary.green { --card-bg: #e7f5ed; }
+:root:not([data-theme="dark"]) .exec-outcome-summary.blue { --card-bg: #e8f2fb; }
+:root:not([data-theme="dark"]) .exec-outcome-summary.amber { --card-bg: #fff0d2; }
+:root:not([data-theme="dark"]) .exec-outcome-summary.red { --card-bg: #ffe7e5; }
+:root:not([data-theme="dark"]) .exec-outcome-summary.grey { --card-bg: #edf1ef; }
 .exec-delivered-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));

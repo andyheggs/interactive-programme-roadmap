@@ -35,6 +35,22 @@ const toneColours: Record<ExecutiveTone, Rgb> = {
   grey: colours.grey,
 };
 
+const toneFills: Record<ExecutiveTone, Rgb> = {
+  green: [231, 245, 237],
+  blue: [232, 242, 251],
+  amber: [255, 240, 210],
+  red: [255, 231, 229],
+  grey: [237, 241, 239],
+};
+
+function statusTone(value?: string): ExecutiveTone {
+  const text = (value ?? "").toLowerCase();
+  if (text.includes("red")) return "red";
+  if (text.includes("amber")) return "amber";
+  if (text.includes("green")) return "green";
+  return "grey";
+}
+
 function fileSlug(value: string): string {
   return value.replace(/[^a-z0-9]+/gi, "-").replace(/^-|-$/g, "").toLowerCase() || "executive-roadmap";
 }
@@ -100,9 +116,9 @@ function addPosterFooter(doc: JsPDF) {
   }
 }
 
-function drawSummaryCard(doc: JsPDF, x: number, y: number, w: number, title: string, value: string) {
-  setDraw(doc, colours.line);
-  setFill(doc, colours.white);
+function drawSummaryCard(doc: JsPDF, x: number, y: number, w: number, title: string, value: string, tone?: ExecutiveTone) {
+  setDraw(doc, tone ? toneColours[tone] : colours.line);
+  setFill(doc, tone ? toneFills[tone] : colours.white);
   doc.roundedRect(x, y, w, 25, 2.5, 2.5, "FD");
   doc.setFont("helvetica", "bold");
   doc.setFontSize(7.4);
@@ -148,8 +164,8 @@ function drawLegend(doc: JsPDF, x: number, y: number, w: number): number {
 function drawMilestoneCard(doc: JsPDF, item: ProgrammeItem, x: number, y: number, w: number, h: number) {
   const tone = executiveTone(item);
   const assessment = executiveToneAssessment(item);
-  setDraw(doc, colours.line);
-  setFill(doc, colours.white);
+  setDraw(doc, toneColours[tone]);
+  setFill(doc, toneFills[tone]);
   doc.roundedRect(x, y, w, h, 2.5, 2.5, "FD");
   setFill(doc, toneColours[tone]);
   doc.rect(x, y, w, 4, "F");
@@ -255,7 +271,7 @@ export async function exportExecutiveRoadmapPosterPdf(schedule: ProgrammeSchedul
   const margin = 14;
   const cardGap = 6;
   const summaryWidth = (pageWidth - margin * 2 - cardGap * 3) / 4;
-  drawSummaryCard(doc, margin, y, summaryWidth, "Programme status", model.programmeStatus);
+  drawSummaryCard(doc, margin, y, summaryWidth, "Programme status", model.programmeStatus, statusTone(model.programmeStatus));
   drawSummaryCard(doc, margin + (summaryWidth + cardGap), y, summaryWidth, "Original delivery plan", formatDate(model.originalDeliveryDate));
   drawSummaryCard(doc, margin + (summaryWidth + cardGap) * 2, y, summaryWidth, "Current forecast", formatDate(model.currentDeliveryDate));
   drawSummaryCard(doc, margin + (summaryWidth + cardGap) * 3, y, summaryWidth, "Forecast basis", model.forecastBasis);
@@ -351,12 +367,13 @@ export function exportExecutiveRoadmapHtml(schedule: ProgrammeSchedule, tracker:
     .legend i { width: 14px; height: 14px; border-radius: 999px; background: var(--tone); }
     .legend p { flex-basis: 100%; font-size: 13px; }
     .milestones { grid-template-columns: repeat(${Math.max(1, model.outcomes.length)}, 1fr); margin-bottom: 28px; }
+    .summary article.status, .milestone { border-color: var(--tone); background: var(--card-bg); }
     .milestone { min-height: 185px; padding: 18px; border-top: 7px solid var(--tone); }
     .milestone span, .node span { color: #647269; font-weight: 800; }
     .milestone strong { display: block; margin: 20px 0 10px; font-size: 20px; line-height: 1.35; }
     .milestone p, .node p { margin: 0 0 12px; color: #647269; font-size: 13px; line-height: 1.35; }
     .milestone em { display: inline-block; padding: 7px 10px; border-radius: 999px; color: white; background: var(--tone); font-style: normal; font-weight: 900; }
-    .green { --tone: #2e7d55; } .blue { --tone: #3d78a9; } .amber { --tone: #ff8a00; } .red { --tone: #b33a32; } .grey { --tone: #7e8c84; }
+    .green { --tone: #2e7d55; --card-bg: #e7f5ed; } .blue { --tone: #3d78a9; --card-bg: #e8f2fb; } .amber { --tone: #ff8a00; --card-bg: #fff0d2; } .red { --tone: #b33a32; --card-bg: #ffe7e5; } .grey { --tone: #7e8c84; --card-bg: #edf1ef; }
     .path { margin-bottom: 16px; padding: 18px; break-inside: avoid; }
     .path h2 { margin: 0 0 16px; font-size: 20px; }
     .sequence { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(130px, 1fr); gap: 14px; align-items: start; border-top: 4px solid #c7d1cb; padding-top: 14px; overflow-x: auto; }
@@ -376,7 +393,7 @@ export function exportExecutiveRoadmapHtml(schedule: ProgrammeSchedule, tracker:
       <strong>Generated ${escapeHtml(formatDate(model.reportDate))}</strong>
     </header>
     <section class="summary">
-      <article><span>Programme status</span><strong>${escapeHtml(model.programmeStatus)}</strong></article>
+      <article class="status ${statusTone(model.programmeStatus)}"><span>Programme status</span><strong>${escapeHtml(model.programmeStatus)}</strong></article>
       <article><span>Original delivery plan</span><strong>${escapeHtml(formatDate(model.originalDeliveryDate))}</strong></article>
       <article><span>Current forecast</span><strong>${escapeHtml(formatDate(model.currentDeliveryDate))}</strong></article>
       <article><span>Forecast basis</span><strong>${escapeHtml(model.forecastBasis)}</strong></article>

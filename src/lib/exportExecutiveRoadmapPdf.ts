@@ -123,7 +123,6 @@ function executiveDependencyScore(item: ProgrammeItem): number {
   const level = `${item.milestoneLevel ?? ""} ${item.dependencyLevel ?? ""}`.toLowerCase();
   let score = 0;
   if (item.executiveMilestone) score += 100;
-  if (item.dependencyAnchor) score += 80;
   if (item.boardReportable) score += 60;
   if (item.roadmapMilestone) score += 50;
   if (item.decisionRequired) score += 35;
@@ -169,6 +168,10 @@ function executivePathRelevance(node: ExecutivePathNode): number {
   return score;
 }
 
+function visibleExecutivePathItem(item: ProgrammeItem): boolean {
+  return Boolean(item.isActive && !item.isSummary && (item.isMilestone || meaningfulText(item.milestoneLevel)));
+}
+
 function collectPredecessorChainWithDepth(outcome: ProgrammeItem, byUid: Map<string, ProgrammeItem>): ExecutivePathNode[] {
   const found = new Map<string, ExecutivePathNode>();
   const seen = new Set<string>();
@@ -199,7 +202,7 @@ function directPredecessors(item: ProgrammeItem, byUid: Map<string, ProgrammeIte
 function collectPredecessorDependencies(outcome: ProgrammeItem, byUid: Map<string, ProgrammeItem>): ProgrammeItem[] {
   const chain = collectPredecessorChainWithDepth(outcome, byUid);
   return chain
-    .filter((node) => node.depth === 1 || executivePathRelevance(node) >= 82)
+    .filter((node) => visibleExecutivePathItem(node.item))
     .sort((a, b) => executivePathRelevance(b) - executivePathRelevance(a) || bySoonest(a.item.finishDate, b.item.finishDate))
     .slice(0, 7)
     .sort((a, b) => bySoonest(a.item.finishDate, b.item.finishDate) || a.depth - b.depth)

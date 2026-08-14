@@ -862,7 +862,6 @@ function executiveDependencyScore(item: ProgrammeItem): number {
   const level = `${item.milestoneLevel ?? ""} ${item.dependencyLevel ?? ""}`.toLowerCase();
   let score = 0;
   if (item.executiveMilestone) score += 100;
-  if (item.dependencyAnchor) score += 80;
   if (item.boardReportable) score += 60;
   if (item.roadmapMilestone) score += 50;
   if (item.decisionRequired) score += 35;
@@ -999,6 +998,26 @@ function directPredecessors(item: ProgrammeItem, byUid: Map<string, ProgrammeIte
     .sort((a, b) => bySoonest(a.finishDate, b.finishDate));
 }
 
+function closestDirectPredecessors(item: ProgrammeItem, byUid: Map<string, ProgrammeItem>, limit = 2): ProgrammeItem[] {
+  const targetDate = parseDate(item.startDate) ?? parseDate(item.finishDate);
+  return directPredecessors(item, byUid)
+    .filter((predecessor) => !predecessor.isSummary)
+    .sort((a, b) => {
+      const aDate = parseDate(a.finishDate ?? a.startDate);
+      const bDate = parseDate(b.finishDate ?? b.startDate);
+      if (targetDate && aDate && bDate) {
+        return Math.abs(targetDate.getTime() - aDate.getTime()) - Math.abs(targetDate.getTime() - bDate.getTime());
+      }
+      return (bDate?.getTime() ?? 0) - (aDate?.getTime() ?? 0);
+    })
+    .slice(0, limit)
+    .sort((a, b) => bySoonest(a.finishDate, b.finishDate));
+}
+
+function visibleExecutivePathItem(item: ProgrammeItem): boolean {
+  return Boolean(item.isActive && !item.isSummary && (item.isMilestone || meaningfulText(item.milestoneLevel)));
+}
+
 function executivePathRelevance(node: ExecutivePathNode): number {
   const item = node.item;
   const level = `${item.milestoneLevel ?? ""} ${item.dependencyLevel ?? ""}`.toLowerCase();
@@ -1037,7 +1056,7 @@ function executivePathRelevance(node: ExecutivePathNode): number {
 function collectPredecessorDependencies(outcome: ProgrammeItem, byUid: Map<string, ProgrammeItem>): ProgrammeItem[] {
   const chain = collectPredecessorChainWithDepth(outcome, byUid);
   const relevant = chain
-    .filter((node) => node.depth === 1 || executivePathRelevance(node) >= 82)
+    .filter((node) => visibleExecutivePathItem(node.item))
     .sort((a, b) => executivePathRelevance(b) - executivePathRelevance(a) || bySoonest(a.item.finishDate, b.item.finishDate))
     .slice(0, 7)
     .sort((a, b) => bySoonest(a.item.finishDate, b.item.finishDate) || a.depth - b.depth);
@@ -1309,9 +1328,9 @@ function ExecutiveSnapshotView({
           </header>
 
           <div className="exec-programme-strip">
-            <article>
+            <article className={`exec-programme-status ${programmeTone === "neutral" ? "grey" : programmeTone}`}>
               <span>Programme status</span>
-              <strong className={`exec-text-${programmeTone === "neutral" ? "grey" : programmeTone}`}>{programmeStatus}</strong>
+              <strong>{programmeStatus}</strong>
             </article>
             <article>
               <span>Original delivery plan</span>
@@ -1391,7 +1410,7 @@ function ExecutiveSnapshotView({
               const expandedItem = path.outcome.uid === selectedPath?.outcome.uid
                 ? [path.outcome, ...path.dependencies, ...pathChain].find((item) => item.uid === expandedUid)
                 : undefined;
-              const expandedPredecessors = expandedItem ? directPredecessors(expandedItem, byUid).filter((item) => !item.isSummary) : [];
+              const expandedPredecessors = expandedItem ? closestDirectPredecessors(expandedItem, byUid, 2) : [];
               const expandedAssessment = expandedItem ? executiveToneAssessment(expandedItem) : undefined;
               return (
               <article className={`exec-path ${path.outcome.uid === selectedPath?.outcome.uid ? "selected" : ""}`} key={path.outcome.uid}>
@@ -1488,7 +1507,7 @@ function ExecutiveSnapshotView({
                           </button>
                         );
                       }) : (
-                        <p>No earlier predecessor items are linked to this item in the Project plan.</p>
+                        <p>No direct predecessor items are linked to this item in the Project plan.</p>
                       )}
                     </div>
                   </div>
