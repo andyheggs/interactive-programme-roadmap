@@ -26,7 +26,16 @@ function normaliseHeader(value: unknown): string {
 }
 
 function excelDate(value: unknown): string | undefined {
-  if (value instanceof Date && !Number.isNaN(value.getTime())) return value.toISOString();
+  if (value instanceof Date && !Number.isNaN(value.getTime())) {
+    return new Date(Date.UTC(
+      value.getFullYear(),
+      value.getMonth(),
+      value.getDate(),
+      value.getHours(),
+      value.getMinutes(),
+      value.getSeconds(),
+    )).toISOString();
+  }
   if (typeof value === "number") {
     const parsed = XLSX.SSF.parse_date_code(value);
     if (!parsed) return undefined;
@@ -59,7 +68,7 @@ function makeRows(workbook: XLSX.WorkBook, sheetName: string): Row[] {
   const values = XLSX.utils.sheet_to_json<Array<string | number | boolean | Date | undefined>>(sheet, {
     header: 1,
     defval: undefined,
-    raw: false,
+    raw: true,
   });
   const headerRowIndex = values.findIndex((row) => row.some((cell) => normaliseHeader(cell).endsWith("id") || normaliseHeader(cell) === "week ending"));
   if (headerRowIndex < 0) return [];
