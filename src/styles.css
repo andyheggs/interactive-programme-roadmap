@@ -1227,20 +1227,29 @@ body.executive-export-light .executive-roadmap {
   gap: 16px;
   min-height: 170px;
   padding: 22px;
-  border: 1px solid var(--exec-line);
+  border: 1px solid var(--outcome-border, var(--exec-line));
   border-radius: 8px;
   color: var(--exec-text);
   text-align: left;
-  background: var(--exec-panel);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.035), transparent 72%),
+    var(--outcome-bg, var(--exec-panel));
+  box-shadow: 0 12px 26px rgba(0, 0, 0, 0.16);
   cursor: pointer;
 }
-.exec-outcome-detail.green { border-color: rgba(25, 122, 85, 0.75); }
-.exec-outcome-detail.blue { border-color: rgba(37, 109, 168, 0.75); }
-.exec-outcome-detail.amber { border-color: rgba(255, 138, 0, 0.75); background: rgba(255, 138, 0, 0.14); }
-.exec-outcome-detail.red { border-color: rgba(196, 59, 69, 0.8); }
+.exec-outcome-detail.green { --outcome-border: #87d695; --outcome-bg: rgba(25, 122, 85, 0.22); --outcome-label: #9de6ad; }
+.exec-outcome-detail.blue { --outcome-border: #87bdf5; --outcome-bg: rgba(37, 109, 168, 0.22); --outcome-label: #9bcfff; }
+.exec-outcome-detail.amber { --outcome-border: #ff8a00; --outcome-bg: rgba(255, 138, 0, 0.2); --outcome-label: #ffd166; }
+.exec-outcome-detail.red { --outcome-border: #ff8b92; --outcome-bg: rgba(196, 59, 69, 0.24); --outcome-label: #ffb0b5; }
+.exec-outcome-detail.grey { --outcome-border: #9aa1aa; --outcome-bg: rgba(116, 124, 132, 0.22); --outcome-label: #cbd1d8; }
+:root:not([data-theme="dark"]) .exec-outcome-detail.green { --outcome-bg: #e7f5ed; --outcome-border: #2e7d55; --outcome-label: #1f704b; }
+:root:not([data-theme="dark"]) .exec-outcome-detail.blue { --outcome-bg: #e8f2fb; --outcome-border: #3d78a9; --outcome-label: #245f8f; }
+:root:not([data-theme="dark"]) .exec-outcome-detail.amber { --outcome-bg: #fff0d2; --outcome-border: #ff8a00; --outcome-label: #8f4e00; }
+:root:not([data-theme="dark"]) .exec-outcome-detail.red { --outcome-bg: #ffe7e5; --outcome-border: #b33a32; --outcome-label: #a32d26; }
+:root:not([data-theme="dark"]) .exec-outcome-detail.grey { --outcome-bg: #edf1ef; --outcome-border: #7e8c84; --outcome-label: #5c6962; }
 .exec-outcome-detail span {
   padding: 0;
-  color: var(--exec-muted);
+  color: var(--outcome-label, var(--exec-muted));
   background: transparent;
   font-size: 0.84rem;
 }
