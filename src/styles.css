@@ -1772,7 +1772,7 @@ body.executive-export-light .executive-roadmap {
 }
 .team-action-card summary {
   display: grid;
-  grid-template-columns: 120px minmax(0, 1.5fr) minmax(120px, 0.7fr) 92px 120px;
+  grid-template-columns: 120px minmax(0, 1.35fr) minmax(110px, 0.65fr) 92px 92px 120px;
   gap: 12px;
   align-items: center;
   padding: 13px 14px;
@@ -1798,6 +1798,17 @@ body.executive-export-light .executive-roadmap {
   border-radius: 999px;
   color: var(--active-text) !important;
   background: var(--active);
+}
+.team-action-date {
+  display: grid;
+  gap: 2px;
+}
+.team-action-date small {
+  color: var(--muted);
+  font-size: 0.64rem;
+  font-weight: 900;
+  letter-spacing: 0;
+  text-transform: uppercase;
 }
 .team-action-detail {
   display: grid;

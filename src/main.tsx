@@ -655,6 +655,11 @@ function statusLabel(item: TeamWorkItem): string {
   return item.status ?? "Not set";
 }
 
+function teamStatusMatches(group: ReturnType<typeof actionStatusGroup>, filters: TeamStatusFilter[]): boolean {
+  if (!filters.length) return true;
+  return filters.includes(group);
+}
+
 function combineTeamWorkItems(schedule: ProgrammeSchedule, tracker?: TrackerData): TeamWorkItem[] {
   const trackerItems: TeamWorkItem[] = (tracker?.actions ?? []).map((action) => ({
     id: `tracker-${action.id}`,
@@ -664,6 +669,7 @@ function combineTeamWorkItems(schedule: ProgrammeSchedule, tracker?: TrackerData
     stream: action.stream,
     status: action.status,
     priority: action.priority,
+    loggedDate: action.meetingDate,
     dueDate: action.dueDate,
     completionDate: action.completionDate,
     meetingDate: action.meetingDate,
@@ -682,6 +688,7 @@ function combineTeamWorkItems(schedule: ProgrammeSchedule, tracker?: TrackerData
       stream: item.stream,
       status: item.status,
       priority: item.isCritical ? "Critical" : item.roadmapMilestone ? "Roadmap milestone" : undefined,
+      loggedDate: item.startDate,
       dueDate: item.finishDate,
       completionDate: isCompleteStatus(item.status) ? item.finishDate : undefined,
       description: [item.milestoneType, item.approvalBody, item.dependencyLevel].filter(Boolean).join(" · "),
@@ -698,7 +705,7 @@ function csvEscape(value?: string | number | boolean): string {
 }
 
 function downloadTeamActionsCsv(items: TeamWorkItem[], schedule: ProgrammeSchedule) {
-  const header = ["Source", "Title", "Owner", "Workstream", "Status", "Priority", "Due date", "Completion date", "Notes"];
+  const header = ["Source", "Title", "Owner", "Workstream", "Status", "Priority", "Logged date", "Due date", "Completion date", "Notes"];
   const rows = items.map((item) => [
     item.source,
     item.title,
@@ -706,6 +713,7 @@ function downloadTeamActionsCsv(items: TeamWorkItem[], schedule: ProgrammeSchedu
     item.stream,
     statusLabel(item),
     item.priority,
+    formatDate(item.loggedDate ?? item.meetingDate),
     formatDate(item.dueDate),
     formatDate(item.completionDate),
     item.latestUpdate ?? item.description,
@@ -806,6 +814,7 @@ type TeamWorkItem = {
   stream?: string;
   status?: string;
   priority?: string;
+  loggedDate?: string;
   dueDate?: string;
   completionDate?: string;
   meetingDate?: string;
@@ -814,6 +823,16 @@ type TeamWorkItem = {
   links?: string;
   dashboardFlag?: boolean;
 };
+
+type TeamStatusFilter = "open" | "due-soon" | "overdue" | "blocked" | "completed";
+
+const teamStatusFilters: Array<{ key: TeamStatusFilter; label: string }> = [
+  { key: "open", label: "Open" },
+  { key: "due-soon", label: "Due soon" },
+  { key: "overdue", label: "Overdue" },
+  { key: "blocked", label: "Blocked" },
+  { key: "completed", label: "Completed" },
+];
 
 const executiveToneLabels: Record<ExecutiveTone, string> = {
   green: "GREEN",
@@ -2106,7 +2125,7 @@ function TeamActionTrackerView({
   dateWindow: DateWindow;
   onExportPdf: (items: TeamWorkItem[]) => void;
 }) {
-  const [statusTab, setStatusTab] = useState<"open" | "due-soon" | "overdue" | "blocked" | "completed" | "all">("open");
+  const [statusFilters, setStatusFilters] = useState<TeamStatusFilter[]>(["open", "due-soon", "overdue", "blocked"]);
   const [owner, setOwner] = useState("all");
   const [source, setSource] = useState("all");
   const [stream, setStream] = useState("all");
@@ -2119,8 +2138,7 @@ function TeamActionTrackerView({
     .filter((item) => {
       const group = actionStatusGroup(item);
       const dateForWindow = group === "completed" ? item.completionDate ?? item.dueDate ?? item.meetingDate : item.dueDate ?? item.meetingDate;
-      if (statusTab !== "all" && statusTab === "open" && group === "completed") return false;
-      if (statusTab !== "all" && statusTab !== "open" && group !== statusTab) return false;
+      if (!teamStatusMatches(group, statusFilters)) return false;
       if (owner !== "all" && !normaliseText(item.owner).includes(normaliseText(owner))) return false;
       if (source !== "all" && item.source !== source) return false;
       if (stream !== "all" && item.stream !== stream) return false;
@@ -2136,6 +2154,9 @@ function TeamActionTrackerView({
     blocked: allItems.filter((item) => actionStatusGroup(item) === "blocked").length,
     completed: allItems.filter((item) => actionStatusGroup(item) === "completed").length,
   };
+  const toggleStatusFilter = (key: TeamStatusFilter) => {
+    setStatusFilters((current) => current.includes(key) ? current.filter((item) => item !== key) : [...current, key]);
+  };
 
   return (
     <>
@@ -2149,17 +2170,19 @@ function TeamActionTrackerView({
         ]} />
 
         <section className="team-action-controls">
-          <div className="tabs">
-            {[
-              ["open", "Open"],
-              ["due-soon", "Due soon"],
-              ["overdue", "Overdue"],
-              ["blocked", "Blocked"],
-              ["completed", "Completed"],
-              ["all", "All"],
-            ].map(([key, label]) => (
-              <button type="button" className={statusTab === key ? "active" : ""} onClick={() => setStatusTab(key as typeof statusTab)} key={key}>{label}</button>
+          <div className="tabs" aria-label="Action status filters">
+            {teamStatusFilters.map(({ key, label }) => (
+              <button
+                type="button"
+                className={statusFilters.includes(key) ? "active" : ""}
+                aria-pressed={statusFilters.includes(key)}
+                onClick={() => toggleStatusFilter(key)}
+                key={key}
+              >
+                {label}
+              </button>
             ))}
+            <button type="button" className={!statusFilters.length ? "active" : ""} aria-pressed={!statusFilters.length} onClick={() => setStatusFilters([])}>All</button>
           </div>
           <div className="team-filter-grid">
             <label>
@@ -2199,7 +2222,8 @@ function TeamActionTrackerView({
                   <span className="source-chip">{item.source}</span>
                   <strong>{item.title}</strong>
                   <span>{item.owner ?? "No owner"}</span>
-                  <span>{formatDate(item.dueDate)}</span>
+                  <span className="team-action-date"><small>Logged</small>{formatDate(item.loggedDate ?? item.meetingDate)}</span>
+                  <span className="team-action-date"><small>Due</small>{formatDate(item.dueDate)}</span>
                   <em>{statusLabel(item)}</em>
                 </summary>
                 <div className="team-action-detail">
@@ -2208,7 +2232,8 @@ function TeamActionTrackerView({
                   <dl>
                     <div><dt>Workstream</dt><dd>{item.stream ?? "Not set"}</dd></div>
                     <div><dt>Priority</dt><dd>{item.priority ?? "Not set"}</dd></div>
-                    <div><dt>Meeting/log date</dt><dd>{formatDate(item.meetingDate)}</dd></div>
+                    <div><dt>Logged date</dt><dd>{formatDate(item.loggedDate ?? item.meetingDate)}</dd></div>
+                    <div><dt>Due date</dt><dd>{formatDate(item.dueDate)}</dd></div>
                     <div><dt>Completion date</dt><dd>{item.completionDate ? formatDate(item.completionDate) : "Not held"}</dd></div>
                     <div><dt>Links</dt><dd>{item.links || "None"}</dd></div>
                   </dl>

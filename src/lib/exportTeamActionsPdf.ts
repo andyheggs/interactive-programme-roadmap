@@ -16,6 +16,7 @@ export type TeamActionPdfItem = {
   status?: string;
   displayStatus?: string;
   priority?: string;
+  loggedDate?: string;
   dueDate?: string;
   completionDate?: string;
   meetingDate?: string;
@@ -138,6 +139,7 @@ export async function exportTeamActionsPdf({ schedule, items, dateWindow }: Expo
     item.source,
     item.owner ?? "No owner",
     item.stream ?? "Not set",
+    formatDate(item.loggedDate ?? item.meetingDate),
     formatDate(item.dueDate),
     item.displayStatus ?? item.status ?? "Not set",
     item.title,
@@ -147,8 +149,8 @@ export async function exportTeamActionsPdf({ schedule, items, dateWindow }: Expo
   table(doc, {
     startY: ((doc as JsPDF & { lastAutoTable?: { finalY?: number } }).lastAutoTable?.finalY ?? 62) + 8,
     margin: { left: 12, right: 12, bottom: 14 },
-    head: [["Source", "Owner", "Workstream", "Due", "Status", "Action / task / milestone", "Notes"]],
-    body: rows.length ? rows : [["No rows", "", "", "", "", "No actions matched the selected filters.", ""]],
+    head: [["Source", "Owner", "Workstream", "Logged", "Due", "Status", "Action / task / milestone", "Notes"]],
+    body: rows.length ? rows : [["No rows", "", "", "", "", "", "No actions matched the selected filters.", ""]],
     theme: "grid",
     showHead: "everyPage",
     styles: { font: "helvetica", fontSize: 7.1, cellPadding: 2.3, textColor: colours.ink, lineColor: colours.line, lineWidth: 0.1, overflow: "linebreak", valign: "top" },
@@ -158,13 +160,14 @@ export async function exportTeamActionsPdf({ schedule, items, dateWindow }: Expo
       0: { cellWidth: 24 },
       1: { cellWidth: 28 },
       2: { cellWidth: 34 },
-      3: { cellWidth: 22, fontStyle: "bold" },
-      4: { cellWidth: 26, fontStyle: "bold" },
-      5: { cellWidth: 62, fontStyle: "bold" },
-      6: { cellWidth: 75 },
+      3: { cellWidth: 20, fontStyle: "bold" },
+      4: { cellWidth: 20, fontStyle: "bold" },
+      5: { cellWidth: 24, fontStyle: "bold" },
+      6: { cellWidth: 58, fontStyle: "bold" },
+      7: { cellWidth: 69 },
     },
     didParseCell: (data) => {
-      if (data.section !== "body" || data.column.index !== 4) return;
+      if (data.section !== "body" || data.column.index !== 5) return;
       const item = items[data.row.index];
       const tone = item ? itemTone(item) : "blue";
       data.cell.styles.textColor = colours[tone];
