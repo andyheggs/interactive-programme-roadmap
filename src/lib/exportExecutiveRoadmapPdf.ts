@@ -199,12 +199,25 @@ function directPredecessors(item: ProgrammeItem, byUid: Map<string, ProgrammeIte
     .sort((a, b) => bySoonest(a.finishDate, b.finishDate));
 }
 
+function closestDirectPredecessors(item: ProgrammeItem, byUid: Map<string, ProgrammeItem>, limit = 2): ProgrammeItem[] {
+  const targetDate = parseDate(item.startDate) ?? parseDate(item.finishDate);
+  return directPredecessors(item, byUid)
+    .sort((a, b) => {
+      const aDate = parseDate(a.finishDate ?? a.startDate);
+      const bDate = parseDate(b.finishDate ?? b.startDate);
+      if (targetDate && aDate && bDate) {
+        return Math.abs(targetDate.getTime() - aDate.getTime()) - Math.abs(targetDate.getTime() - bDate.getTime());
+      }
+      return (bDate?.getTime() ?? 0) - (aDate?.getTime() ?? 0);
+    })
+    .slice(0, limit)
+    .sort((a, b) => bySoonest(a.finishDate, b.finishDate));
+}
+
 function collectPredecessorDependencies(outcome: ProgrammeItem, byUid: Map<string, ProgrammeItem>): ProgrammeItem[] {
   const chain = collectPredecessorChainWithDepth(outcome, byUid);
   return chain
     .filter((node) => visibleExecutivePathItem(node.item))
-    .sort((a, b) => executivePathRelevance(b) - executivePathRelevance(a) || bySoonest(a.item.finishDate, b.item.finishDate))
-    .slice(0, 7)
     .sort((a, b) => bySoonest(a.item.finishDate, b.item.finishDate) || a.depth - b.depth)
     .map((node) => node.item);
 }
@@ -396,9 +409,7 @@ export async function exportExecutiveRoadmapPdf({ schedule, tracker, dateWindow 
   outcomes.forEach((outcome) => {
     const dependencies = collectPredecessorDependencies(outcome, byUid);
     const rows = [...dependencies, outcome].map((item) => {
-      const direct = directPredecessors(item, byUid)
-        .filter((predecessor) => executiveDependencyScore(predecessor) > 0 || predecessor.isMilestone || predecessor.roadmapMilestone)
-        .slice(0, 3)
+      const direct = closestDirectPredecessors(item, byUid, 2)
         .map((predecessor) => predecessor.name)
         .join("; ");
       return [

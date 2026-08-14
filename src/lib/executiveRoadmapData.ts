@@ -291,8 +291,6 @@ function collectPredecessorChainWithDepth(outcome: ProgrammeItem, byUid: Map<str
 function collectPredecessorDependencies(outcome: ProgrammeItem, byUid: Map<string, ProgrammeItem>): ProgrammeItem[] {
   return collectPredecessorChainWithDepth(outcome, byUid)
     .filter((node) => visibleExecutivePathItem(node.item))
-    .sort((a, b) => executivePathRelevance(b) - executivePathRelevance(a) || bySoonest(a.item.finishDate, b.item.finishDate))
-    .slice(0, 7)
     .sort((a, b) => bySoonest(a.item.finishDate, b.item.finishDate) || a.depth - b.depth)
     .map((node) => node.item);
 }

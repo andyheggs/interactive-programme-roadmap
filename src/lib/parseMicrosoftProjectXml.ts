@@ -194,7 +194,8 @@ function applyCustomFields(
     const fieldId = childText(attribute, "FieldID");
     const fieldName = fieldId ? customFields.get(fieldId) : undefined;
     if (!fieldName) return;
-    const raw = resolveLookupValue(childText(attribute, "Value"), childText(attribute, "ValueGUID"), lookup);
+    const rawValue = childText(attribute, "Value");
+    const raw = resolveLookupValue(rawValue, childText(attribute, "ValueGUID"), lookup);
     if (fieldName === "roadmapMilestone") item.roadmapMilestone = raw?.toLowerCase() === "yes" || asBool(raw);
     else if (
       fieldName === "discussed" ||
@@ -204,7 +205,7 @@ function applyCustomFields(
       fieldName === "externalDependency" ||
       fieldName === "dependencyAnchor" ||
       fieldName === "governanceGate"
-    ) item[fieldName] = asBool(raw);
+    ) item[fieldName] = asBool(rawValue);
     else if (raw && raw !== "None" && raw !== "N/A") (item[fieldName] as string | boolean | undefined) = raw;
   });
   if (normaliseFieldLabel(item.milestoneLevel) === "executive milestone") item.executiveMilestone = true;

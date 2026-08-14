@@ -1055,12 +1055,10 @@ function executivePathRelevance(node: ExecutivePathNode): number {
 
 function collectPredecessorDependencies(outcome: ProgrammeItem, byUid: Map<string, ProgrammeItem>): ProgrammeItem[] {
   const chain = collectPredecessorChainWithDepth(outcome, byUid);
-  const relevant = chain
+  return chain
     .filter((node) => visibleExecutivePathItem(node.item))
-    .sort((a, b) => executivePathRelevance(b) - executivePathRelevance(a) || bySoonest(a.item.finishDate, b.item.finishDate))
-    .slice(0, 7)
-    .sort((a, b) => bySoonest(a.item.finishDate, b.item.finishDate) || a.depth - b.depth);
-  return relevant.map((node) => node.item);
+    .sort((a, b) => bySoonest(a.item.finishDate, b.item.finishDate) || a.depth - b.depth)
+    .map((node) => node.item);
 }
 
 function executiveDependencyPaths(schedule: ProgrammeSchedule): ExecutivePath[] {
