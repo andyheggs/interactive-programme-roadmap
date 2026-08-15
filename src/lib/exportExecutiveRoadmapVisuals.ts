@@ -297,7 +297,7 @@ export async function exportExecutiveRoadmapPosterPdf(schedule: ProgrammeSchedul
   doc.setFont("helvetica", "normal");
   doc.setFontSize(8);
   setText(doc, colours.muted);
-  doc.text("Key predecessor milestones linked through the imported Microsoft Project plan.", margin, y + 6);
+  doc.text("Key stream milestones and linked cross-stream milestone dependencies from the imported Project plan.", margin, y + 6);
   y += 14;
   model.paths.forEach((path) => {
     const needed = 41;

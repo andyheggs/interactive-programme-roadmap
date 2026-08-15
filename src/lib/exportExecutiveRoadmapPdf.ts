@@ -2,7 +2,7 @@ import type { jsPDF as JsPDF } from "jspdf";
 import type { ProgrammeItem, ProgrammeSchedule } from "../types/programme";
 import type { TrackerData } from "../types/reporting";
 import { formatDate, parseDate } from "./dateUtils";
-import { executiveToneAssessment as assessExecutiveTone, executiveToneLabel } from "./executiveRoadmapData";
+import { buildExecutiveRoadmapModel, executiveToneAssessment as assessExecutiveTone, executiveToneLabel } from "./executiveRoadmapData";
 
 type DateWindow = {
   start?: Date;
@@ -337,12 +337,11 @@ function table(
 export async function exportExecutiveRoadmapPdf({ schedule, tracker, dateWindow }: ExportExecutiveRoadmapOptions) {
   const [{ default: jsPDF }, { default: autoTable }] = await Promise.all([import("jspdf"), import("jspdf-autotable")]);
   const reportDate = new Date().toISOString();
-  const windowStart = dateWindow.start ?? parseDate(reportDate);
+  const model = buildExecutiveRoadmapModel(schedule, tracker, dateWindow);
   const outcomesAll = executiveMilestoneItems(schedule);
-  const outcomes = outcomesAll.filter((item) => !isHistoricDeliveredItem(item, windowStart));
+  const outcomes = model.outcomes;
   const deliveryOutcome = programmeDeliveryOutcome(schedule, outcomesAll);
-  const weekly = latestWeeklySummary(tracker);
-  const programmeStatus = meaningfulText(weekly?.overallRag) ?? "Not captured";
+  const programmeStatus = model.programmeStatus;
   const byUid = new Map(schedule.items.map((item) => [item.uid, item]));
   const doc = new jsPDF({ orientation: "landscape", unit: "mm", format: "a4" });
 
@@ -400,14 +399,14 @@ export async function exportExecutiveRoadmapPdf({ schedule, tracker, dateWindow 
   );
 
   outcomes.forEach((outcome) => {
-    const dependencies = collectPredecessorDependencies(outcome, byUid, windowStart);
+    const dependencies = model.paths.find((path) => path.outcome.uid === outcome.uid)?.dependencies ?? [];
     const rows = [...dependencies, outcome].map((item) => {
       const direct = closestDirectPredecessors(item, byUid, 2)
         .map((predecessor) => predecessor.name)
         .join("; ");
       return [
         formatDate(item.finishDate),
-        item.uid === outcome.uid ? "Executive outcome" : "Predecessor",
+        item.uid === outcome.uid ? "Executive outcome" : "Route milestone",
         executiveToneLabel(item),
         assessExecutiveTone(item).summary,
         item.name,

@@ -216,6 +216,14 @@ function isHistoricDeliveredItem(item: ProgrammeItem, windowStart?: Date): boole
   return Boolean(isDeliveredItem(item) && finishDate && windowStart && finishDate < windowStart);
 }
 
+function isWithinRoadmapWindow(item: ProgrammeItem, dateWindow: DateWindow, fallbackStart?: Date): boolean {
+  const windowStart = dateWindow.start ?? fallbackStart;
+  const finishDate = parseDate(item.finishDate);
+  if (isHistoricDeliveredItem(item, windowStart)) return false;
+  if (dateWindow.end && finishDate && finishDate > dateWindow.end) return false;
+  return true;
+}
+
 export function programmeDeliveryOutcome(schedule: ProgrammeSchedule, outcomes: ProgrammeItem[]): ProgrammeItem | undefined {
   const candidates = outcomes.length ? outcomes : executiveMilestoneItems(schedule);
   return candidates.find((item) => /platform.*go live|go live/i.test(item.name))
@@ -276,11 +284,41 @@ function visibleExecutivePathItem(item: ProgrammeItem): boolean {
   return Boolean(item.isActive && !item.isSummary && (item.isMilestone || meaningfulText(item.milestoneLevel)));
 }
 
+function visibleExecutiveMilestoneItem(item: ProgrammeItem): boolean {
+  return Boolean(item.isActive && !item.isSummary && (item.isMilestone || item.executiveMilestone || normaliseText(item.milestoneLevel) === "executive milestone"));
+}
+
+function outlineSegments(item: ProgrammeItem): string[] {
+  return (item.outlineNumber ?? item.wbs ?? "").split(".").map((part) => part.trim()).filter(Boolean);
+}
+
+function topOutlineSegment(item: ProgrammeItem): string | undefined {
+  return outlineSegments(item)[0];
+}
+
+function routeBranchPrefix(item: ProgrammeItem): string | undefined {
+  const segments = outlineSegments(item);
+  if (segments.length < 2) return segments[0];
+  const depth = Math.min(3, segments.length - 1);
+  return segments.slice(0, depth).join(".");
+}
+
+function outlineMatchesPrefix(item: ProgrammeItem, prefix: string): boolean {
+  const outline = item.outlineNumber ?? item.wbs ?? "";
+  return outline === prefix || outline.startsWith(`${prefix}.`);
+}
+
+function sameTopLevelStream(a: ProgrammeItem, b: ProgrammeItem): boolean {
+  const aTop = topOutlineSegment(a);
+  const bTop = topOutlineSegment(b);
+  return Boolean(aTop && bTop && aTop === bTop);
+}
+
 function collectPredecessorChainWithDepth(outcome: ProgrammeItem, byUid: Map<string, ProgrammeItem>): ExecutivePathNode[] {
   const found = new Map<string, ExecutivePathNode>();
   const seen = new Set<string>();
   const walk = (item: ProgrammeItem, depth: number) => {
-    if (depth > 8 || seen.has(item.uid)) return;
+    if (depth > 20 || seen.has(item.uid)) return;
     seen.add(item.uid);
     item.predecessors.forEach((link) => {
       if (!link.predecessorUid) return;
@@ -295,12 +333,50 @@ function collectPredecessorChainWithDepth(outcome: ProgrammeItem, byUid: Map<str
   return [...found.values()];
 }
 
-function collectPredecessorDependencies(outcome: ProgrammeItem, byUid: Map<string, ProgrammeItem>, windowStart?: Date): ProgrammeItem[] {
-  return collectPredecessorChainWithDepth(outcome, byUid)
-    .filter((node) => visibleExecutivePathItem(node.item))
-    .filter((node) => !isHistoricDeliveredItem(node.item, windowStart))
-    .sort((a, b) => bySoonest(a.item.finishDate, b.item.finishDate) || a.depth - b.depth)
+function routeBranchPrefixes(outcome: ProgrammeItem, chain: ExecutivePathNode[]): Set<string> {
+  const prefixes = new Set<string>();
+  const outcomePrefix = routeBranchPrefix(outcome);
+  if (outcomePrefix) prefixes.add(outcomePrefix);
+  chain.forEach((node) => {
+    if (!sameTopLevelStream(outcome, node.item)) return;
+    const prefix = routeBranchPrefix(node.item);
+    if (prefix) prefixes.add(prefix);
+  });
+  return prefixes;
+}
+
+function isInRouteBranches(item: ProgrammeItem, prefixes: Set<string>): boolean {
+  return [...prefixes].some((prefix) => outlineMatchesPrefix(item, prefix));
+}
+
+function collectRouteMilestones(outcome: ProgrammeItem, schedule: ProgrammeSchedule, chain: ExecutivePathNode[], dateWindow: DateWindow, fallbackStart?: Date): ProgrammeItem[] {
+  const prefixes = routeBranchPrefixes(outcome, chain);
+  return schedule.items
+    .filter((item) => item.uid !== outcome.uid)
+    .filter((item) => sameTopLevelStream(outcome, item))
+    .filter((item) => isInRouteBranches(item, prefixes))
+    .filter(visibleExecutiveMilestoneItem)
+    .filter((item) => isWithinRoadmapWindow(item, dateWindow, fallbackStart));
+}
+
+function collectCrossStreamMilestones(outcome: ProgrammeItem, chain: ExecutivePathNode[], routeMilestones: ProgrammeItem[], dateWindow: DateWindow, fallbackStart?: Date): ProgrammeItem[] {
+  const routeUids = new Set(routeMilestones.map((item) => item.uid));
+  return chain
+    .filter((node) => node.item.uid !== outcome.uid)
+    .filter((node) => !routeUids.has(node.item.uid))
+    .filter((node) => !sameTopLevelStream(outcome, node.item))
+    .filter((node) => node.depth <= 4 || executiveDependencyScore(node.item) > 0)
+    .filter((node) => visibleExecutiveMilestoneItem(node.item))
+    .filter((node) => isWithinRoadmapWindow(node.item, dateWindow, fallbackStart))
     .map((node) => node.item);
+}
+
+function collectPredecessorDependencies(outcome: ProgrammeItem, schedule: ProgrammeSchedule, byUid: Map<string, ProgrammeItem>, dateWindow: DateWindow, fallbackStart?: Date): ProgrammeItem[] {
+  const chain = collectPredecessorChainWithDepth(outcome, byUid);
+  const routeMilestones = collectRouteMilestones(outcome, schedule, chain, dateWindow, fallbackStart);
+  const crossStreamMilestones = collectCrossStreamMilestones(outcome, chain, routeMilestones, dateWindow, fallbackStart);
+  return [...new Map([...routeMilestones, ...crossStreamMilestones].map((item) => [item.uid, item])).values()]
+    .sort((a, b) => bySoonest(a.finishDate, b.finishDate));
 }
 
 export function executiveTone(item?: ProgrammeItem): ExecutiveTone {
@@ -311,7 +387,7 @@ export function buildExecutiveRoadmapModel(schedule: ProgrammeSchedule, tracker:
   const reportDate = new Date().toISOString();
   const windowStart = dateWindow.start ?? parseDate(reportDate);
   const allOutcomes = executiveMilestoneItems(schedule);
-  const outcomes = allOutcomes.filter((item) => !isHistoricDeliveredItem(item, windowStart));
+  const outcomes = allOutcomes.filter((item) => isWithinRoadmapWindow(item, dateWindow, windowStart));
   const byUid = new Map(schedule.items.map((item) => [item.uid, item]));
   const deliveryOutcome = programmeDeliveryOutcome(schedule, allOutcomes);
   const weekly = latestWeeklySummary(tracker);
@@ -324,7 +400,7 @@ export function buildExecutiveRoadmapModel(schedule: ProgrammeSchedule, tracker:
     outcomes,
     paths: outcomes.map((outcome) => ({
       outcome,
-      dependencies: collectPredecessorDependencies(outcome, byUid, windowStart),
+      dependencies: collectPredecessorDependencies(outcome, schedule, byUid, dateWindow, windowStart),
     })),
   };
 }

@@ -1082,12 +1082,7 @@ function collectPredecessorDependencies(outcome: ProgrammeItem, byUid: Map<strin
 }
 
 function executiveDependencyPaths(schedule: ProgrammeSchedule, window: DateWindow): ExecutivePath[] {
-  const outcomes = executiveMilestoneItems(schedule);
-  const byUid = new Map(schedule.items.map((item) => [item.uid, item]));
-  return outcomes.map((outcome) => {
-    const dependencies = collectPredecessorDependencies(outcome, byUid, window);
-    return { outcome, dependencies };
-  });
+  return buildExecutiveRoadmapModel(schedule, undefined, window).paths;
 }
 
 function relatedTrackerItems<T extends { stream?: string; title: string; dashboardFlag?: boolean }>(items: T[], item?: ProgrammeItem): T[] {
@@ -1419,8 +1414,8 @@ function ExecutiveSnapshotView({
           </div>
 
           <div className="exec-section-label">
-            <h3>Milestone dependency pathways</h3>
-            <p>Key predecessor steps connected through Microsoft Project predecessor links.</p>
+            <h3>Milestone route pathways</h3>
+            <p>Key stream milestones plus explicitly linked cross-stream milestone dependencies from the imported Project plan.</p>
           </div>
           <div className="exec-pathways">
             {paths.length ? paths.map((path) => {
