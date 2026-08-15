@@ -2,7 +2,7 @@ import type { jsPDF as JsPDF } from "jspdf";
 import type { ProgrammeItem, ProgrammeSchedule } from "../types/programme";
 import type { TrackerData } from "../types/reporting";
 import { formatDate, parseDate } from "./dateUtils";
-import { executiveToneAssessment as assessExecutiveTone } from "./executiveRoadmapData";
+import { executiveToneAssessment as assessExecutiveTone, executiveToneLabel } from "./executiveRoadmapData";
 
 type DateWindow = {
   start?: Date;
@@ -37,14 +37,6 @@ const colours: Record<"ink" | "muted" | "deep" | "line" | "pale" | "green" | "am
   red: [179, 58, 50],
   blue: [61, 120, 169],
   grey: [126, 140, 132],
-};
-
-const executiveToneLabels: Record<ExecutiveTone, string> = {
-  green: "GREEN",
-  blue: "PLANNED",
-  amber: "AMBER",
-  red: "RED",
-  grey: "NOT ASSESSED",
 };
 
 function fileSlug(value: string): string {
@@ -391,7 +383,7 @@ export async function exportExecutiveRoadmapPdf({ schedule, tracker, dateWindow 
     ["Date", "RAG", "RAG reason", "Executive milestone", "Baseline", "Stream"],
     outcomes.map((item) => [
       formatDate(item.finishDate),
-      executiveToneLabels[executiveTone(item)],
+      executiveToneLabel(item),
       assessExecutiveTone(item).summary,
       item.name,
       formatDate(item.baselineFinish),
@@ -416,7 +408,7 @@ export async function exportExecutiveRoadmapPdf({ schedule, tracker, dateWindow 
       return [
         formatDate(item.finishDate),
         item.uid === outcome.uid ? "Executive outcome" : "Predecessor",
-        executiveToneLabels[executiveTone(item)],
+        executiveToneLabel(item),
         assessExecutiveTone(item).summary,
         item.name,
         direct || "-",

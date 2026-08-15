@@ -26,6 +26,7 @@ const FALLBACK_CUSTOM_FIELDS: Record<string, keyof ProgrammeItem> = {
   "188743756": "externalDependency",
   "188743758": "dependencyAnchor",
   "188743759": "governanceGate",
+  "188743760": "dateAssumption",
   "188743999": "ragStatus",
   "188744006": "targetMilestone",
   "188744007": "workstreamAccountableOwner",
@@ -84,6 +85,7 @@ function customFieldForDefinition(fieldName?: string, alias?: string): keyof Pro
   if (labels.some((label) => label === "critical path review" || label === "text10")) return "criticalPathReview";
   if (labels.some((label) => label === "rag status" || label === "text13")) return "ragStatus";
   if (labels.some((label) => label === "date confidence" || label === "text19")) return "dateConfidence";
+  if (labels.some((label) => label === "date assumption" || label === "forecast assumption" || label === "assumption based date" || label === "flag9")) return "dateAssumption";
   if (labels.some((label) => label === "target milestone" || label === "text20")) return "targetMilestone";
   if (labels.some((label) => label === "workstream accountable owner" || label === "text21")) return "workstreamAccountableOwner";
   if (labels.some((label) => label === "delivery support roles" || label === "text22")) return "deliverySupportRoles";
@@ -203,6 +205,7 @@ function applyCustomFields(
       fieldName === "boardReportable" ||
       fieldName === "decisionRequired" ||
       fieldName === "externalDependency" ||
+      fieldName === "dateAssumption" ||
       fieldName === "dependencyAnchor" ||
       fieldName === "governanceGate"
     ) item[fieldName] = asBool(rawValue);

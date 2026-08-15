@@ -33,7 +33,7 @@ import {
   exportExecutiveRoadmapPosterPdf,
 } from "./lib/exportExecutiveRoadmapVisuals";
 import { exportGanttPdf, type GanttPdfSection } from "./lib/exportGanttPdf";
-import { buildExecutiveRoadmapModel, executiveToneAssessment } from "./lib/executiveRoadmapData";
+import { buildExecutiveRoadmapModel, executiveToneAssessment, executiveToneLabel } from "./lib/executiveRoadmapData";
 import { exportTeamActionsPdf as exportTeamActionsA4Pdf } from "./lib/exportTeamActionsPdf";
 import { exportWeeklyStatusPdf as exportWeeklyStatusA4Pdf } from "./lib/exportWeeklyStatusPdf";
 import { parseMicrosoftProjectXml } from "./lib/parseMicrosoftProjectXml";
@@ -1403,7 +1403,7 @@ function ExecutiveSnapshotView({
                 >
                   <span>{formatDate(item.finishDate)}</span>
                   <strong>{item.name}</strong>
-                  <em>{executiveToneLabels[tone]}</em>
+                  <em>{executiveToneLabel(item)}</em>
                 </button>
               );
             })}
@@ -1412,7 +1412,7 @@ function ExecutiveSnapshotView({
           <div className="exec-legend" aria-label="Roadmap legend">
             <span><i className="legend-dot green" /> Complete / confirmed</span>
             <span><i className="legend-dot blue" /> Planned / dated</span>
-            <span><i className="legend-dot amber" /> At risk / date assumption</span>
+            <span><i className="legend-dot amber" /> Date assumption / not confirmed</span>
             <span><i className="legend-dot red" /> Blocked / overdue</span>
             <span><i className="legend-dot grey" /> Not assessed</span>
             <span><i className="legend-dot executive" /> Executive dependency</span>
@@ -1472,7 +1472,7 @@ function ExecutiveSnapshotView({
                     }}
                     aria-expanded={expandedUid === path.outcome.uid}
                   >
-                    <span>{executiveToneLabels[executiveTone(path.outcome)]}</span>
+                    <span>{executiveToneLabel(path.outcome)}</span>
                     <strong>{path.outcome.name}</strong>
                     <em>{formatDate(path.outcome.finishDate)}</em>
                     <small>{expandedUid === path.outcome.uid ? "Hide predecessor detail" : "Show predecessor detail"}</small>
@@ -1486,7 +1486,7 @@ function ExecutiveSnapshotView({
                       <p>{formatDate(expandedItem.finishDate)} · {expandedItem.stream ?? expandedItem.milestoneLevel ?? expandedItem.dependencyLevel ?? "Project plan item"}</p>
                       {expandedAssessment ? (
                         <div className={`exec-rag-explainer ${expandedAssessment.tone}`}>
-                          <strong>{executiveToneLabels[expandedAssessment.tone]} status rationale</strong>
+                          <strong>{expandedItem ? executiveToneLabel(expandedItem) : executiveToneLabels[expandedAssessment.tone]} status rationale</strong>
                           <p>{expandedAssessment.summary}</p>
                           <ul>
                             {expandedAssessment.reasons.map((reason) => (
@@ -1521,7 +1521,7 @@ function ExecutiveSnapshotView({
                           >
                             <span>{formatDate(item.finishDate)}</span>
                             <strong>{item.name}</strong>
-                            <em className={tone}>{executiveToneLabels[tone]}</em>
+                            <em className={tone}>{executiveToneLabel(item)}</em>
                           </button>
                         );
                       }) : (

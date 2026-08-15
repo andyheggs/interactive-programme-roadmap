@@ -6,6 +6,7 @@ import {
   buildExecutiveRoadmapModel,
   executiveTone,
   executiveToneAssessment,
+  executiveToneLabel,
   executiveToneLabels,
   type DateWindow,
   type ExecutiveTone,
@@ -133,7 +134,7 @@ function drawLegend(doc: JsPDF, x: number, y: number, w: number): number {
   const items: Array<{ tone: ExecutiveTone; label: string }> = [
     { tone: "green", label: "Complete / confirmed" },
     { tone: "blue", label: "Planned / dated" },
-    { tone: "amber", label: "At risk / date assumption" },
+    { tone: "amber", label: "Date assumption / not confirmed" },
     { tone: "red", label: "Blocked / overdue" },
     { tone: "grey", label: "Not assessed" },
   ];
@@ -157,7 +158,7 @@ function drawLegend(doc: JsPDF, x: number, y: number, w: number): number {
   doc.setFont("helvetica", "normal");
   doc.setFontSize(7);
   setText(doc, colours.muted);
-  doc.text("Amber means the source RAG is Amber, the date is an assumption, or an external dependency lacks confirmed date confidence.", x + 4, y + 15);
+  doc.text("Orange means Date Assumption is Yes or the source RAG is Amber. Decision and dependency flags are shown as detail evidence.", x + 4, y + 15);
   return y + 24;
 }
 
@@ -184,7 +185,7 @@ function drawMilestoneCard(doc: JsPDF, item: ProgrammeItem, x: number, y: number
   doc.roundedRect(x + 4, y + h - 12, 22, 7, 3, 3, "F");
   doc.setFontSize(6.2);
   setText(doc, colours.white);
-  doc.text(executiveToneLabels[tone], x + 15, y + h - 7.2, { align: "center" });
+  doc.text(executiveToneLabel(item), x + 15, y + h - 7.2, { align: "center" });
 }
 
 function drawPathRow(doc: JsPDF, title: string, items: ProgrammeItem[], y: number): number {
@@ -321,7 +322,7 @@ export function exportExecutiveRoadmapHtml(schedule: ProgrammeSchedule, tracker:
       <span>${escapeHtml(formatDate(item.finishDate))}</span>
       <strong>${escapeHtml(item.name)}</strong>
       <p>${escapeHtml(assessment.summary)}</p>
-      <em>${escapeHtml(executiveToneLabels[tone])}</em>
+      <em>${escapeHtml(executiveToneLabel(item))}</em>
     </article>`;
   }).join("");
   const pathRows = model.paths.map((path) => `
@@ -402,10 +403,10 @@ export function exportExecutiveRoadmapHtml(schedule: ProgrammeSchedule, tracker:
       <strong>Colour status</strong>
       <span class="green"><i></i>Complete / confirmed</span>
       <span class="blue"><i></i>Planned / dated</span>
-      <span class="amber"><i></i>At risk / date assumption</span>
+      <span class="amber"><i></i>Date assumption / not confirmed</span>
       <span class="red"><i></i>Blocked / overdue</span>
       <span class="grey"><i></i>Not assessed</span>
-      <p>Amber means the source RAG is Amber, the date is an assumption, or an external dependency lacks confirmed date confidence. Decision gates are shown as context, but they do not make an item Amber on their own.</p>
+      <p>Orange means Date Assumption is Yes or the source RAG is Amber. Decision and dependency flags are shown as detail evidence.</p>
     </section>
     <section class="milestones">${milestoneCards}</section>
     ${pathRows}

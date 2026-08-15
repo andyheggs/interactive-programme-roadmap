@@ -74,6 +74,7 @@ export type ProgrammeItem = {
   criticalPathReview?: string;
   ragStatus?: string;
   dateConfidence?: string;
+  dateAssumption?: boolean;
   targetMilestone?: string;
   workstreamAccountableOwner?: string;
   deliverySupportRoles?: string;

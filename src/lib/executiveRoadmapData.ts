@@ -45,6 +45,12 @@ export const executiveToneLabels: Record<ExecutiveTone, string> = {
   grey: "NOT ASSESSED",
 };
 
+export function executiveToneLabel(item?: ProgrammeItem): string {
+  const assessment = executiveToneAssessment(item);
+  if (item?.dateAssumption && assessment.tone === "amber") return "DATE ASSUMPTION";
+  return executiveToneLabels[assessment.tone];
+}
+
 const uncertainDateTerms = [
   "medium",
   "low",
@@ -127,6 +133,7 @@ export function executiveToneAssessment(item?: ProgrammeItem): ExecutiveToneAsse
   const uncertainDate = Boolean(includesAny(confidence, uncertainDateTerms) || (!confirmedDate && confidence.includes("target")));
   const evidence = [
     meaningfulText(item.ragStatus) ? { label: "Plan RAG", value: meaningfulText(item.ragStatus)! } : undefined,
+    item.dateAssumption !== undefined ? { label: "Date assumption", value: item.dateAssumption ? "Yes" : "No" } : undefined,
     meaningfulText(item.dateConfidence) ? { label: "Date confidence", value: meaningfulText(item.dateConfidence)! } : undefined,
     item.externalDependency ? { label: "External dependency", value: "Yes" } : undefined,
     item.decisionRequired ? { label: "Decision required", value: "Yes" } : undefined,
@@ -141,18 +148,18 @@ export function executiveToneAssessment(item?: ProgrammeItem): ExecutiveToneAsse
   } else if (item.status === "blocked") {
     tone = "red";
     reasons.push("Project status is blocked");
-  } else if (rag.includes("amber")) {
-    tone = "amber";
-    reasons.push("Source RAG is Amber");
-  } else if (uncertainDate) {
-    tone = "amber";
-    reasons.push(item.dateConfidence ? `Date confidence is "${item.dateConfidence}"` : "The forecast date is not confirmed");
-  } else if (item.externalDependency && !confirmedDate && !rag.includes("green")) {
-    tone = "amber";
-    reasons.push("Delivery depends on an external item and no confirmed date confidence is captured");
   } else if (item.status === "complete") {
     tone = "green";
     reasons.push("Project status is complete");
+  } else if (item.dateAssumption) {
+    tone = "amber";
+    reasons.push("Date assumption is flagged as Yes");
+  } else if (rag.includes("amber")) {
+    tone = "amber";
+    reasons.push("Source RAG is Amber");
+  } else if (item.dateAssumption === undefined && uncertainDate) {
+    tone = "amber";
+    reasons.push(item.dateConfidence ? `Date confidence is "${item.dateConfidence}"` : "The forecast date is not confirmed");
   } else if (rag.includes("green")) {
     tone = "green";
     reasons.push("Source RAG is Green");
