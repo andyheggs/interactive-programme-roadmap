@@ -2190,6 +2190,36 @@ body.executive-export-light .executive-roadmap {
   border-radius: 8px;
   background: var(--surface);
 }
+.team-quick-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.team-quick-tabs button {
+  min-height: 36px;
+  padding: 8px 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--text-strong);
+  background: var(--surface-alt);
+  font-weight: 900;
+  cursor: pointer;
+}
+.team-quick-tabs button.active {
+  border-color: var(--active);
+  color: var(--active-text);
+  background: var(--active);
+}
+.team-action-controls .tabs button:disabled {
+  cursor: not-allowed;
+  opacity: 0.48;
+}
+.team-scope-note {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.84rem;
+  font-weight: 800;
+}
 .team-filter-grid {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));

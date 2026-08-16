@@ -651,6 +651,22 @@ function teamStatusMatches(group: ReturnType<typeof actionStatusGroup>, filters:
   return filters.includes(group);
 }
 
+function sameCalendarDate(a?: string, b?: string): boolean {
+  const first = parseDate(a);
+  const second = parseDate(b);
+  if (!first || !second) return false;
+  return first.getFullYear() === second.getFullYear() &&
+    first.getMonth() === second.getMonth() &&
+    first.getDate() === second.getDate();
+}
+
+function latestMeetingActionDate(items: TeamWorkItem[]): string | undefined {
+  const latest = items
+    .filter((item) => item.source === "Meeting action" && parseDate(item.meetingDate ?? item.loggedDate))
+    .sort((a, b) => bySoonest(b.meetingDate ?? b.loggedDate, a.meetingDate ?? a.loggedDate))[0];
+  return latest?.meetingDate ?? latest?.loggedDate;
+}
+
 function combineTeamWorkItems(schedule: ProgrammeSchedule, tracker?: TrackerData): TeamWorkItem[] {
   const trackerItems: TeamWorkItem[] = (tracker?.actions ?? []).map((action) => ({
     id: `tracker-${action.id}`,
@@ -818,6 +834,7 @@ type TeamWorkItem = {
 };
 
 type TeamStatusFilter = "open" | "due-soon" | "overdue" | "blocked" | "completed";
+type TeamActionScope = "standard" | "last-meeting-actions" | "all-meeting-actions";
 
 const teamStatusFilters: Array<{ key: TeamStatusFilter; label: string }> = [
   { key: "open", label: "Open" },
@@ -2727,11 +2744,15 @@ function TeamActionTrackerView({
   onExportPdf: (items: TeamWorkItem[]) => void;
 }) {
   const [statusFilters, setStatusFilters] = useState<TeamStatusFilter[]>(["open", "due-soon", "overdue", "blocked"]);
+  const [actionScope, setActionScope] = useState<TeamActionScope>("standard");
   const [owner, setOwner] = useState("all");
   const [source, setSource] = useState("all");
   const [stream, setStream] = useState("all");
   const [search, setSearch] = useState("");
   const allItems = combineTeamWorkItems(schedule, tracker);
+  const meetingActions = allItems.filter((item) => item.source === "Meeting action");
+  const lastMeetingDate = latestMeetingActionDate(allItems);
+  const lastMeetingActions = lastMeetingDate ? meetingActions.filter((item) => sameCalendarDate(item.meetingDate ?? item.loggedDate, lastMeetingDate)) : [];
   const owners = uniqueSorted(allItems.flatMap((item) => item.owner?.split("/") ?? []).map((value) => value.trim()).filter(Boolean));
   const streams = uniqueSorted(allItems.map((item) => item.stream));
   const sources = uniqueSorted(allItems.map((item) => item.source));
@@ -2739,12 +2760,18 @@ function TeamActionTrackerView({
     .filter((item) => {
       const group = actionStatusGroup(item);
       const dateForWindow = group === "completed" ? item.completionDate ?? item.dueDate ?? item.meetingDate : item.dueDate ?? item.meetingDate;
-      if (!teamStatusMatches(group, statusFilters)) return false;
+      if (actionScope === "last-meeting-actions") {
+        if (item.source !== "Meeting action" || !sameCalendarDate(item.meetingDate ?? item.loggedDate, lastMeetingDate)) return false;
+      } else if (actionScope === "all-meeting-actions") {
+        if (item.source !== "Meeting action") return false;
+      } else {
+        if (!teamStatusMatches(group, statusFilters)) return false;
+        if (source !== "all" && item.source !== source) return false;
+        if (!dateWithin(dateForWindow, dateWindow)) return false;
+      }
       if (owner !== "all" && !normaliseText(item.owner).includes(normaliseText(owner))) return false;
-      if (source !== "all" && item.source !== source) return false;
       if (stream !== "all" && item.stream !== stream) return false;
       if (search && !normaliseText(`${item.title} ${item.description} ${item.latestUpdate} ${item.owner} ${item.stream}`).includes(normaliseText(search))) return false;
-      if (!dateWithin(dateForWindow, dateWindow)) return false;
       return true;
     })
     .sort((a, b) => bySoonest(a.dueDate, b.dueDate) || a.title.localeCompare(b.title));
@@ -2771,20 +2798,37 @@ function TeamActionTrackerView({
         ]} />
 
         <section className="team-action-controls">
+          <div className="team-quick-tabs" aria-label="Meeting action quick views">
+            <button type="button" className={actionScope === "standard" ? "active" : ""} aria-pressed={actionScope === "standard"} onClick={() => setActionScope("standard")}>
+              Standard view
+            </button>
+            <button type="button" className={actionScope === "last-meeting-actions" ? "active" : ""} aria-pressed={actionScope === "last-meeting-actions"} onClick={() => setActionScope("last-meeting-actions")}>
+              Last meeting actions ({lastMeetingActions.length})
+            </button>
+            <button type="button" className={actionScope === "all-meeting-actions" ? "active" : ""} aria-pressed={actionScope === "all-meeting-actions"} onClick={() => setActionScope("all-meeting-actions")}>
+              All meeting actions ({meetingActions.length})
+            </button>
+          </div>
           <div className="tabs" aria-label="Action status filters">
             {teamStatusFilters.map(({ key, label }) => (
               <button
                 type="button"
                 className={statusFilters.includes(key) ? "active" : ""}
                 aria-pressed={statusFilters.includes(key)}
+                disabled={actionScope !== "standard"}
                 onClick={() => toggleStatusFilter(key)}
                 key={key}
               >
                 {label}
               </button>
             ))}
-            <button type="button" className={!statusFilters.length ? "active" : ""} aria-pressed={!statusFilters.length} onClick={() => setStatusFilters([])}>All</button>
+            <button type="button" className={!statusFilters.length ? "active" : ""} aria-pressed={!statusFilters.length} disabled={actionScope !== "standard"} onClick={() => setStatusFilters([])}>All</button>
           </div>
+          {actionScope !== "standard" ? (
+            <p className="team-scope-note">
+              Showing {actionScope === "last-meeting-actions" ? `meeting actions logged on ${formatDate(lastMeetingDate)}` : "all meeting actions"}; status, source and reporting date filters are bypassed for this quick view.
+            </p>
+          ) : null}
           <div className="team-filter-grid">
             <label>
               Owner
