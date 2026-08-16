@@ -1960,6 +1960,7 @@ function WeeklyExecutiveStatusView({
   const moreChanges = remainingWeeklyItems(allChanges, significantChanges, (change) => `change-${change.id}`);
   const [expandedTools, setExpandedTools] = useState<string[]>([]);
   const [showStatusSummaryEditor, setShowStatusSummaryEditor] = useState(true);
+  const [showWhatChangedEditor, setShowWhatChangedEditor] = useState(true);
   const [dragItem, setDragItem] = useState<WeeklyDragItem | undefined>();
   const ragTone = toneClass(weekly?.overallRag);
   const displayTitle = weeklyProgrammeTitle(schedule.title);
@@ -1974,9 +1975,11 @@ function WeeklyExecutiveStatusView({
     "Import the latest tracker to populate the weekly status update.";
   const statusSummary = curation.statusSummaryOverride ?? statusSummarySource;
   const nextMilestone = upcomingMilestoneSource[0];
-  const progressItems = [...splitDigest(weekly?.keyProgress, 4), ...splitDigest(weekly?.whatChanged, 2)].slice(0, 5);
+  const progressItems = splitDigest(weekly?.keyProgress, 5);
   const priorityItems = splitDigest(weekly?.priorityActions, 5);
-  const leadershipAsk = meaningfulText(weekly?.askSteerNeeded) ?? meaningfulText(weekly?.decisionsNeeded) ?? decisionsNeeded[0]?.title;
+  const whatChangedSource = meaningfulText(weekly?.whatChanged) ?? "No material changes captured in the latest weekly row.";
+  const whatChangedText = curation.whatChangedOverride ?? whatChangedSource;
+  const whatChangedItems = splitDigest(whatChangedText, 5);
   const trackerStatus = tracker
     ? `${tracker.sourceFileName ?? "Tracker workbook"} | ${tracker.weeklySummaries.length} weekly summaries | ${tracker.risks.length} risks | ${tracker.issues.length} issues | ${tracker.actions.length} actions`
     : "Import the latest tracker workbook to populate RAG, weekly narrative, risks, decisions and actions.";
@@ -2023,6 +2026,12 @@ function WeeklyExecutiveStatusView({
     onUpdateCuration((current) => ({
       ...current,
       statusSummaryOverride: value,
+    }));
+  };
+  const updateWhatChanged = (value: string | undefined) => {
+    onUpdateCuration((current) => ({
+      ...current,
+      whatChangedOverride: value,
     }));
   };
 
@@ -2139,8 +2148,30 @@ function WeeklyExecutiveStatusView({
             {!priorityItems.length ? <p>No priority actions summary found.</p> : null}
           </article>
           <article className="weekly-panel weekly-ask">
-            <h3>Leadership ask</h3>
-            <p>{leadershipAsk ?? "No current leadership ask flagged."}</p>
+            <h3>What changed this week</h3>
+            {whatChangedItems.map((item) => <p key={item}>{item}</p>)}
+            {!whatChangedItems.length ? <p>No material changes captured in the latest weekly row.</p> : null}
+            {showWhatChangedEditor ? (
+              <div className="weekly-panel-editor">
+                <span>{curation.whatChangedOverride !== undefined ? "Edited on dashboard" : "Tracker: What changed this week"}</span>
+                <textarea
+                  value={whatChangedText}
+                  onChange={(event) => updateWhatChanged(event.target.value)}
+                  rows={4}
+                  aria-label="Edit what changed this week"
+                />
+                <div className="weekly-panel-actions">
+                  {curation.whatChangedOverride !== undefined ? (
+                    <button type="button" className="download-action secondary" onClick={() => updateWhatChanged(undefined)}>
+                      Use tracker changes
+                    </button>
+                  ) : null}
+                  <button type="button" className="download-action secondary" onClick={() => setShowWhatChangedEditor(false)}>
+                    Hide editor
+                  </button>
+                </div>
+              </div>
+            ) : null}
           </article>
         </section>
 
@@ -2232,6 +2263,7 @@ function WeeklyExecutiveStatusView({
         </div>
         <div className="weekly-tool-buttons">
           {!showStatusSummaryEditor ? <button type="button" onClick={() => setShowStatusSummaryEditor(true)}>Show status editor</button> : null}
+          {!showWhatChangedEditor ? <button type="button" onClick={() => setShowWhatChangedEditor(true)}>Show changes editor</button> : null}
           <button type="button" className={isToolExpanded("upcoming") ? "active" : ""} aria-expanded={isToolExpanded("upcoming")} onClick={() => toggleTool("upcoming")}>More upcoming milestones ({moreUpcomingMilestones.length})</button>
           <button type="button" className={isToolExpanded("completed") ? "active" : ""} aria-expanded={isToolExpanded("completed")} onClick={() => toggleTool("completed")}>Completed milestones ({moreCompletedMilestones.length})</button>
           <button type="button" className={isToolExpanded("risks") ? "active" : ""} aria-expanded={isToolExpanded("risks")} onClick={() => toggleTool("risks")}>More risks ({moreRisks.length})</button>

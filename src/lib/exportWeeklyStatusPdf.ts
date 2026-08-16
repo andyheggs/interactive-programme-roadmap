@@ -466,9 +466,10 @@ export async function exportWeeklyStatusPdf({ schedule, tracker, dateWindow, cur
     "Import the latest tracker to populate the weekly status update.";
   const nextMilestone = upcomingMilestoneSource[0];
   const nextKeyDate = nextMilestone ? `${formatDate(nextMilestone.finishDate)} - ${nextMilestone.name}` : "None in window";
-  const progressItems = [...splitDigest(weekly?.keyProgress, 4), ...splitDigest(weekly?.whatChanged, 2)].slice(0, 5);
+  const progressItems = splitDigest(weekly?.keyProgress, 5);
   const priorityItems = splitDigest(weekly?.priorityActions, 5);
-  const leadershipAsk = meaningfulText(weekly?.askSteerNeeded) ?? meaningfulText(weekly?.decisionsNeeded) ?? decisionsNeeded[0]?.title ?? "No current leadership ask flagged.";
+  const whatChangedText = curation.whatChangedOverride ?? meaningfulText(weekly?.whatChanged) ?? "No material changes captured in the latest weekly row.";
+  const whatChangedItems = splitDigest(whatChangedText, 5);
 
   const doc = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
   const pageWidth = doc.internal.pageSize.getWidth();
@@ -512,7 +513,7 @@ export async function exportWeeklyStatusPdf({ schedule, tracker, dateWindow, cur
 
   y = addNarrativeBox(doc, y, "Last week", progressItems, "No weekly progress summary found.");
   y = addNarrativeBox(doc, y, "This week / next", priorityItems, "No priority actions summary found.");
-  y = addNarrativeBox(doc, y, "Leadership ask", [leadershipAsk], "No current leadership ask flagged.");
+  y = addNarrativeBox(doc, y, "What changed this week", whatChangedItems, "No material changes captured in the latest weekly row.");
 
   doc.addPage();
   y = 18;

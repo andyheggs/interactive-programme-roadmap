@@ -1923,6 +1923,40 @@ body.executive-export-light .executive-roadmap {
   display: grid;
   gap: 8px;
 }
+.weekly-panel-editor {
+  display: grid;
+  gap: 8px;
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border-soft);
+}
+.weekly-panel-editor span {
+  color: var(--muted);
+  font-size: 0.76rem;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+.weekly-panel-editor textarea {
+  width: 100%;
+  min-height: 104px;
+  resize: vertical;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 10px 12px;
+  color: var(--text);
+  background: var(--surface);
+  font: inherit;
+  line-height: 1.45;
+}
+.weekly-panel-editor textarea:focus {
+  outline: 2px solid rgba(61, 120, 169, 0.35);
+  border-color: var(--active);
+}
+.weekly-panel-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
 .weekly-kpis article,
 .weekly-panel,
 .weekly-card {

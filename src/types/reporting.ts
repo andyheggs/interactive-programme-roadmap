@@ -132,6 +132,7 @@ export type WeeklyStatusCuration = Partial<Record<WeeklyStatusSectionKey, {
   hidden: string[];
 }>> & {
   statusSummaryOverride?: string;
+  whatChangedOverride?: string;
 };
 
 export type MeetingMinute = {
