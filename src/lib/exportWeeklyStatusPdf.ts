@@ -1,6 +1,6 @@
 import type { jsPDF as JsPDF } from "jspdf";
 import type { ProgrammeItem, ProgrammeSchedule } from "../types/programme";
-import type { TrackerChange, TrackerData, TrackerDecision, TrackerIssue, TrackerRisk, WeeklyStatusCuration, WeeklyStatusSectionKey } from "../types/reporting";
+import type { TrackerChange, TrackerData, TrackerDecision, TrackerIssue, TrackerRisk, WeeklyStatusCuration, WeeklyStatusSectionKey, WeeklySummary } from "../types/reporting";
 import { formatDate, parseDate } from "./dateUtils";
 
 type DateWindow = {
@@ -170,6 +170,19 @@ function forecastToGoLiveLabel(schedule: ProgrammeSchedule): string {
   const outcome = programmeDeliveryOutcome(schedule, executiveMilestoneItems(schedule));
   if (outcome?.finishDate) return `${formatDate(outcome.finishDate)} - ${outcome.name}`;
   return formatDate(schedule.finishDate);
+}
+
+function generatedStatusSummary(weekly?: WeeklySummary, mainBlocker?: string): string | undefined {
+  const progress = [...splitDigest(weekly?.keyProgress, 2), ...splitDigest(weekly?.whatChanged, 1)].slice(0, 2);
+  const priorities = splitDigest(weekly?.priorityActions, 2);
+  const blocker = meaningfulText(mainBlocker) ?? meaningfulText(weekly?.keyRisksOrIssues) ?? meaningfulText(weekly?.ragRationale);
+  const rag = meaningfulText(weekly?.overallRag);
+  const parts: string[] = [];
+  if (progress.length) parts.push(`This week progressed ${progress.join(" and ").replace(/\.$/, "")}.`);
+  if (priorities.length) parts.push(`Next focus is ${priorities.join(" and ").replace(/\.$/, "")}.`);
+  if (rag && blocker) parts.push(`The programme remains ${rag} due to ${blocker.replace(/\.$/, "")}.`);
+  else if (blocker) parts.push(`The main blocker is ${blocker.replace(/\.$/, "")}.`);
+  return parts.length ? parts.join(" ") : undefined;
 }
 
 function uniqueItems(items: ProgrammeItem[]): ProgrammeItem[] {
@@ -444,6 +457,13 @@ export async function exportWeeklyStatusPdf({ schedule, tracker, dateWindow, cur
   const deliveryConfidence = meaningfulText(weekly?.goLiveConfidence) ?? "Not captured";
   const forecastToGoLive = forecastToGoLiveLabel(schedule);
   const mainBlocker = meaningfulText(weekly?.mainBlocker) ?? risksIssues[0]?.title ?? "None flagged";
+  const statusSummary =
+    curation.statusSummaryOverride ??
+    meaningfulText(weekly?.executiveStatusSummary) ??
+    meaningfulText(weekly?.openingLine) ??
+    meaningfulText(weekly?.ragRationale) ??
+    generatedStatusSummary(weekly, mainBlocker) ??
+    "Import the latest tracker to populate the weekly status update.";
   const nextMilestone = upcomingMilestoneSource[0];
   const nextKeyDate = nextMilestone ? `${formatDate(nextMilestone.finishDate)} - ${nextMilestone.name}` : "None in window";
   const progressItems = [...splitDigest(weekly?.keyProgress, 4), ...splitDigest(weekly?.whatChanged, 2)].slice(0, 5);
@@ -470,8 +490,7 @@ export async function exportWeeklyStatusPdf({ schedule, tracker, dateWindow, cur
   doc.setFont("helvetica", "normal");
   doc.setFontSize(8.2);
   setText(doc, colours.muted);
-  const openingLine = meaningfulText(weekly?.openingLine) ?? meaningfulText(weekly?.ragRationale) ?? "Import the latest tracker to populate the weekly status update.";
-  doc.text(doc.splitTextToSize(openingLine, 120).slice(0, 4), 17, y + 17);
+  doc.text(doc.splitTextToSize(statusSummary, 120).slice(0, 4), 17, y + 17);
   const rag = meaningfulText(weekly?.overallRag) ?? "Not captured";
   doc.setFillColor(...toneColour(rag));
   doc.roundedRect(pageWidth - 53, y + 5, 36, 20, 2.5, 2.5, "F");

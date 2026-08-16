@@ -120,6 +120,7 @@ export async function parseMeetingTracker(file: File): Promise<TrackerData> {
       decisionsMade: rowValue(row, "Decisions made"),
       decisionsNeeded: rowValue(row, "Decisions needed"),
       priorityActions: rowValue(row, "Priority actions"),
+      executiveStatusSummary: rowValue(row, "Executive Status Summary", "Status Summary", "Executive Summary"),
       openingLine: rowValue(row, "Opening line for next meeting"),
       askSteerNeeded: rowValue(row, "Ask / Steer Needed", "CEO Ask"),
       mainBlocker: rowValue(row, "Main Blocker"),

@@ -17,6 +17,7 @@ export type WeeklySummary = {
   decisionsMade?: string;
   decisionsNeeded?: string;
   priorityActions?: string;
+  executiveStatusSummary?: string;
   openingLine?: string;
   askSteerNeeded?: string;
   mainBlocker?: string;
@@ -129,7 +130,9 @@ export type WeeklyStatusSectionKey = "milestones" | "risksIssues" | "decisions" 
 export type WeeklyStatusCuration = Partial<Record<WeeklyStatusSectionKey, {
   order: string[];
   hidden: string[];
-}>>;
+}>> & {
+  statusSummaryOverride?: string;
+};
 
 export type MeetingMinute = {
   id: string;

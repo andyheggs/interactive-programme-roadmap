@@ -1882,6 +1882,43 @@ body.executive-export-light .executive-roadmap {
   grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 12px;
 }
+.weekly-summary-editor {
+  display: grid;
+  grid-template-columns: minmax(160px, 220px) minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: start;
+  padding: 14px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface-strong);
+}
+.weekly-summary-editor span {
+  display: block;
+  margin-bottom: 4px;
+  color: var(--text-strong);
+  font-weight: 900;
+}
+.weekly-summary-editor p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.8rem;
+}
+.weekly-summary-editor textarea {
+  width: 100%;
+  min-height: 82px;
+  resize: vertical;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 10px 12px;
+  color: var(--text);
+  background: var(--surface);
+  font: inherit;
+  line-height: 1.45;
+}
+.weekly-summary-editor textarea:focus {
+  outline: 2px solid rgba(61, 120, 169, 0.35);
+  border-color: var(--active);
+}
 .weekly-kpis article,
 .weekly-panel,
 .weekly-card {
@@ -2654,6 +2691,7 @@ body.executive-export-light .executive-roadmap {
   .exec-watchlist-grid,
   .exec-drilldown-panel,
   .weekly-header,
+  .weekly-summary-editor,
   .weekly-source,
   .weekly-focus,
   .weekly-grid,

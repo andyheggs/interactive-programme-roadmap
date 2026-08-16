@@ -41,7 +41,7 @@ import { parseMicrosoftProjectXml } from "./lib/parseMicrosoftProjectXml";
 import { parseMeetingTracker } from "./lib/parseMeetingTracker";
 import { clamp, durationLabel, formatDate, parseDate, uniqueSorted } from "./lib/dateUtils";
 import type { ProgrammeFilters, ProgrammeItem, ProgrammeSchedule, ProgrammeView } from "./types/programme";
-import type { TrackerAction, TrackerChange, TrackerData, TrackerDecision, TrackerIssue, TrackerRisk, WeeklyStatusCuration, WeeklyStatusSectionKey } from "./types/reporting";
+import type { TrackerAction, TrackerChange, TrackerData, TrackerDecision, TrackerIssue, TrackerRisk, WeeklyStatusCuration, WeeklyStatusSectionKey, WeeklySummary } from "./types/reporting";
 import "./styles.css";
 
 const initialFilters: ProgrammeFilters = {
@@ -858,6 +858,19 @@ function forecastToGoLiveLabel(schedule: ProgrammeSchedule): string {
   const outcome = programmeDeliveryOutcome(schedule, executiveMilestoneItems(schedule));
   if (outcome?.finishDate) return `${formatDate(outcome.finishDate)} - ${outcome.name}`;
   return formatDate(schedule.finishDate);
+}
+
+function generatedStatusSummary(weekly?: WeeklySummary, mainBlocker?: string): string | undefined {
+  const progress = [...splitDigest(weekly?.keyProgress, 2), ...splitDigest(weekly?.whatChanged, 1)].slice(0, 2);
+  const priorities = splitDigest(weekly?.priorityActions, 2);
+  const blocker = meaningfulText(mainBlocker) ?? meaningfulText(weekly?.keyRisksOrIssues) ?? meaningfulText(weekly?.ragRationale);
+  const rag = meaningfulText(weekly?.overallRag);
+  const parts: string[] = [];
+  if (progress.length) parts.push(`This week progressed ${progress.join(" and ").replace(/\.$/, "")}.`);
+  if (priorities.length) parts.push(`Next focus is ${priorities.join(" and ").replace(/\.$/, "")}.`);
+  if (rag && blocker) parts.push(`The programme remains ${rag} due to ${blocker.replace(/\.$/, "")}.`);
+  else if (blocker) parts.push(`The main blocker is ${blocker.replace(/\.$/, "")}.`);
+  return parts.length ? parts.join(" ") : undefined;
 }
 
 function significantDependency(item: ProgrammeItem): boolean {
@@ -1952,6 +1965,13 @@ function WeeklyExecutiveStatusView({
   const deliveryConfidence = meaningfulText(weekly?.goLiveConfidence);
   const forecastToGoLive = forecastToGoLiveLabel(schedule);
   const mainBlocker = meaningfulText(weekly?.mainBlocker) ?? risksIssues[0]?.title;
+  const statusSummarySource =
+    meaningfulText(weekly?.executiveStatusSummary) ??
+    meaningfulText(weekly?.openingLine) ??
+    meaningfulText(weekly?.ragRationale) ??
+    generatedStatusSummary(weekly, mainBlocker) ??
+    "Import the latest tracker to populate the weekly status update.";
+  const statusSummary = curation.statusSummaryOverride ?? statusSummarySource;
   const nextMilestone = upcomingMilestoneSource[0];
   const progressItems = [...splitDigest(weekly?.keyProgress, 4), ...splitDigest(weekly?.whatChanged, 2)].slice(0, 5);
   const priorityItems = splitDigest(weekly?.priorityActions, 5);
@@ -2000,6 +2020,12 @@ function WeeklyExecutiveStatusView({
     else next.add(tool);
     return next;
   });
+  const updateStatusSummary = (value: string | undefined) => {
+    onUpdateCuration((current) => ({
+      ...current,
+      statusSummaryOverride: value,
+    }));
+  };
 
   const renderControls = (section: WeeklyStatusSectionKey, id: string, visibleIds: string[]) => (
     <div className="weekly-row-controls">
@@ -2049,7 +2075,7 @@ function WeeklyExecutiveStatusView({
           <div>
             <span className="snapshot-eyebrow">Weekly executive status</span>
             <h2>{displayTitle}</h2>
-            <p>{meaningfulText(weekly?.openingLine) ?? meaningfulText(weekly?.ragRationale) ?? "Import the latest tracker to populate the weekly status update."}</p>
+            <p>{statusSummary}</p>
           </div>
           <div className={`weekly-rag weekly-rag-${ragTone}`}>
             <span>Overall RAG</span>
@@ -2057,6 +2083,24 @@ function WeeklyExecutiveStatusView({
             <em>{formatDate(generatedReportDate)}</em>
           </div>
         </header>
+
+        <section className="weekly-summary-editor">
+          <div>
+            <span>Status summary</span>
+            <p>{curation.statusSummaryOverride !== undefined ? "Edited on dashboard" : meaningfulText(weekly?.executiveStatusSummary) ? "Tracker: Executive Status Summary" : "Auto-generated from latest weekly row"}</p>
+          </div>
+          <textarea
+            value={statusSummary}
+            onChange={(event) => updateStatusSummary(event.target.value)}
+            rows={3}
+            aria-label="Edit executive status summary"
+          />
+          {curation.statusSummaryOverride !== undefined ? (
+            <button type="button" className="download-action secondary" onClick={() => updateStatusSummary(undefined)}>
+              Use tracker summary
+            </button>
+          ) : null}
+        </section>
 
         <section className="weekly-kpis">
           <article>
