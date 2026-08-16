@@ -71,6 +71,17 @@ function meaningfulText(value?: string): string | undefined {
   return text;
 }
 
+function weeklyProgrammeTitle(value?: string): string {
+  const title = (value ?? "").trim() || "Programme Delivery";
+  const withoutVersion = title
+    .replace(/\s+(?:-|\u2013)\s*v\d.*$/i, "")
+    .replace(/\s*\/\s*/g, " ")
+    .trim();
+  if (/^daf programme delivery$/i.test(withoutVersion)) return "Data Asset Foundation Programme Delivery";
+  if (/^daf\b/i.test(withoutVersion)) return withoutVersion.replace(/^daf\b/i, "Data Asset Foundation");
+  return withoutVersion || title;
+}
+
 function splitDigest(value?: string, limit = 3): string[] {
   const text = meaningfulText(value);
   if (!text) return [];
@@ -400,7 +411,8 @@ function addFooters(doc: JsPDF) {
 export async function exportWeeklyStatusPdf({ schedule, tracker, dateWindow, curation = {} }: ExportWeeklyStatusOptions) {
   const [{ default: jsPDF }, { default: autoTable }] = await Promise.all([import("jspdf"), import("jspdf-autotable")]);
   const weekly = latestWeeklySummary(tracker);
-  const reportDate = weekly?.meetingDate ?? weekly?.weekEnding ?? new Date().toISOString();
+  const reportDate = new Date().toISOString();
+  const displayTitle = weeklyProgrammeTitle(schedule.title);
   const forwardWindow = { ...dateWindow, start: dateWindow.start ?? parseDate(reportDate) };
   const upcomingMilestoneSource = programmeMilestones(schedule)
     .filter((item) => item.isMilestone && dateWithin(item.finishDate, forwardWindow) && item.status !== "complete")
@@ -439,7 +451,7 @@ export async function exportWeeklyStatusPdf({ schedule, tracker, dateWindow, cur
 
   const doc = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
   const pageWidth = doc.internal.pageSize.getWidth();
-  addHeader(doc, schedule.title, reportDate);
+  addHeader(doc, displayTitle, reportDate);
 
   let y = 36;
   doc.setFont("helvetica", "bold");
@@ -453,7 +465,7 @@ export async function exportWeeklyStatusPdf({ schedule, tracker, dateWindow, cur
   doc.setFont("helvetica", "bold");
   doc.setFontSize(10);
   setText(doc, colours.ink);
-  doc.text(doc.splitTextToSize(schedule.title, 120), 17, y + 9);
+  doc.text(doc.splitTextToSize(displayTitle, 120), 17, y + 9);
   doc.setFont("helvetica", "normal");
   doc.setFontSize(8.2);
   setText(doc, colours.muted);

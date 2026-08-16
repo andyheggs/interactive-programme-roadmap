@@ -1836,6 +1836,21 @@ body.executive-export-light .executive-roadmap {
   border-radius: 8px;
   background: rgba(0, 0, 0, 0.24);
 }
+.weekly-rag.weekly-rag-red {
+  background: #b33a32;
+  color: #fff;
+}
+.weekly-rag.weekly-rag-amber {
+  background: #ff8a00;
+  color: #1c241f;
+}
+.weekly-rag.weekly-rag-green {
+  background: #2e7d55;
+  color: #fff;
+}
+.weekly-rag.weekly-rag-neutral {
+  background: rgba(0, 0, 0, 0.24);
+}
 .weekly-rag span,
 .weekly-rag em,
 .weekly-kpis span {
@@ -1847,6 +1862,19 @@ body.executive-export-light .executive-roadmap {
 }
 .weekly-rag strong {
   font-size: 1.7rem;
+}
+.weekly-rag.weekly-rag-red span,
+.weekly-rag.weekly-rag-red em,
+.weekly-rag.weekly-rag-red strong,
+.weekly-rag.weekly-rag-green span,
+.weekly-rag.weekly-rag-green em,
+.weekly-rag.weekly-rag-green strong {
+  color: #fff;
+}
+.weekly-rag.weekly-rag-amber span,
+.weekly-rag.weekly-rag-amber em,
+.weekly-rag.weekly-rag-amber strong {
+  color: #1c241f;
 }
 .weekly-kpis,
 .weekly-grid {

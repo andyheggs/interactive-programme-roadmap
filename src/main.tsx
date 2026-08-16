@@ -542,6 +542,17 @@ function formatDateOrText(value?: string, fallback = "Not set"): string {
   return parseDate(value) ? formatDate(value) : value;
 }
 
+function weeklyProgrammeTitle(value?: string): string {
+  const title = (value ?? "").trim() || "Programme Delivery";
+  const withoutVersion = title
+    .replace(/\s+(?:-|\u2013)\s*v\d.*$/i, "")
+    .replace(/\s*\/\s*/g, " ")
+    .trim();
+  if (/^daf programme delivery$/i.test(withoutVersion)) return "Data Asset Foundation Programme Delivery";
+  if (/^daf\b/i.test(withoutVersion)) return withoutVersion.replace(/^daf\b/i, "Data Asset Foundation");
+  return withoutVersion || title;
+}
+
 function itemImportance(item: ProgrammeItem): number {
   const level = item.milestoneLevel?.toLowerCase() ?? "";
   if (item.executiveMilestone || level.includes("executive")) return 5;
@@ -1917,8 +1928,9 @@ function WeeklyExecutiveStatusView({
   onExportPdf: () => void;
 }) {
   const weekly = latestWeeklySummary(tracker);
-  const reportingDate = weekly?.meetingDate ?? weekly?.weekEnding ?? new Date().toISOString();
-  const forwardWindow = { ...dateWindow, start: dateWindow.start ?? parseDate(reportingDate) };
+  const generatedReportDate = new Date().toISOString();
+  const latestWeeklyDate = weekly?.meetingDate ?? weekly?.weekEnding;
+  const forwardWindow = { ...dateWindow, start: dateWindow.start ?? parseDate(generatedReportDate) };
   const upcomingMilestoneSource = programmeMilestones(schedule)
     .filter((item) => item.isMilestone && dateWithin(item.finishDate, forwardWindow) && item.status !== "complete")
     .sort((a, b) => bySoonest(a.finishDate, b.finishDate));
@@ -1951,6 +1963,7 @@ function WeeklyExecutiveStatusView({
   const [expandedTools, setExpandedTools] = useState<Set<string>>(() => new Set());
   const [dragItem, setDragItem] = useState<WeeklyDragItem | undefined>();
   const ragTone = toneClass(weekly?.overallRag);
+  const displayTitle = weeklyProgrammeTitle(schedule.title);
   const movement = weeklyMovement(tracker);
   const deliveryConfidence = meaningfulText(weekly?.goLiveConfidence);
   const mainBlocker = meaningfulText(weekly?.mainBlocker) ?? risksIssues[0]?.title;
@@ -2044,18 +2057,18 @@ function WeeklyExecutiveStatusView({
         <div className={`weekly-source ${tracker && weekly ? "loaded" : "missing"}`}>
           <span>Data source</span>
           <strong>{trackerStatus}</strong>
-          <em>{weekly ? `Latest weekly row: ${weekly.id || "untitled"} | ${formatDate(reportingDate)} | ${weekly.overallRag ?? "RAG not set"}` : "No weekly summary row found"}</em>
+          <em>{weekly ? `Latest weekly row: ${weekly.id || "untitled"} | ${formatDate(latestWeeklyDate)} | ${weekly.overallRag ?? "RAG not set"}` : "No weekly summary row found"}</em>
         </div>
         <header className="weekly-header">
           <div>
             <span className="snapshot-eyebrow">Weekly executive status</span>
-            <h2>{schedule.title}</h2>
+            <h2>{displayTitle}</h2>
             <p>{meaningfulText(weekly?.openingLine) ?? meaningfulText(weekly?.ragRationale) ?? "Import the latest tracker to populate the weekly status update."}</p>
           </div>
-          <div className="weekly-rag">
+          <div className={`weekly-rag weekly-rag-${ragTone}`}>
             <span>Overall RAG</span>
             <strong>{meaningfulText(weekly?.overallRag) ?? "Not captured"}</strong>
-            <em>{formatDate(reportingDate)}</em>
+            <em>{formatDate(generatedReportDate)}</em>
           </div>
         </header>
 
