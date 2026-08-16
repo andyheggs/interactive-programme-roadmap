@@ -25,6 +25,10 @@ export type ExecutiveRoadmapModel = {
   paths: ExecutiveRoadmapPath[];
 };
 
+export type ExecutiveRoadmapBuildOptions = {
+  contextItemUids?: string[];
+};
+
 type ExecutivePathNode = {
   item: ProgrammeItem;
   depth: number;
@@ -379,16 +383,51 @@ function collectPredecessorDependencies(outcome: ProgrammeItem, schedule: Progra
     .sort((a, b) => bySoonest(a.finishDate, b.finishDate));
 }
 
+function contextAssignmentScore(item: ProgrammeItem, outcome: ProgrammeItem, byUid: Map<string, ProgrammeItem>): number {
+  if (item.uid === outcome.uid || !item.isActive || item.isSummary) return 0;
+  const chain = collectPredecessorChainWithDepth(outcome, byUid);
+  const routePrefixes = routeBranchPrefixes(outcome, chain);
+  let score = 0;
+  if (sameTopLevelStream(item, outcome)) score += 20;
+  if (isInRouteBranches(item, routePrefixes)) score += 120;
+  const chainNode = chain.find((node) => node.item.uid === item.uid);
+  if (chainNode) score += 90 + Math.max(0, 12 - chainNode.depth);
+  if (item.successors.some((link) => link.successorUid === outcome.uid)) score += 80;
+  if (item.predecessors.some((link) => link.predecessorUid === outcome.uid)) score += 20;
+  const itemDate = parseDate(item.finishDate);
+  const outcomeDate = parseDate(outcome.finishDate);
+  if (itemDate && outcomeDate && itemDate <= outcomeDate) score += 10;
+  return score;
+}
+
+function assignContextItems(outcomes: ProgrammeItem[], contextItems: ProgrammeItem[], byUid: Map<string, ProgrammeItem>): Map<string, ProgrammeItem[]> {
+  const assignments = new Map<string, ProgrammeItem[]>();
+  contextItems.forEach((item) => {
+    const ranked = outcomes
+      .map((outcome) => ({ outcome, score: contextAssignmentScore(item, outcome, byUid) }))
+      .filter((entry) => entry.score > 0)
+      .sort((a, b) => b.score - a.score || bySoonest(a.outcome.finishDate, b.outcome.finishDate));
+    const target = ranked[0]?.outcome;
+    if (!target) return;
+    assignments.set(target.uid, [...(assignments.get(target.uid) ?? []), item]);
+  });
+  return assignments;
+}
+
 export function executiveTone(item?: ProgrammeItem): ExecutiveTone {
   return executiveToneAssessment(item).tone;
 }
 
-export function buildExecutiveRoadmapModel(schedule: ProgrammeSchedule, tracker: TrackerData | undefined, dateWindow: DateWindow): ExecutiveRoadmapModel {
+export function buildExecutiveRoadmapModel(schedule: ProgrammeSchedule, tracker: TrackerData | undefined, dateWindow: DateWindow, options: ExecutiveRoadmapBuildOptions = {}): ExecutiveRoadmapModel {
   const reportDate = new Date().toISOString();
   const windowStart = dateWindow.start ?? parseDate(reportDate);
   const allOutcomes = executiveMilestoneItems(schedule);
   const outcomes = allOutcomes.filter((item) => isWithinRoadmapWindow(item, dateWindow, windowStart));
   const byUid = new Map(schedule.items.map((item) => [item.uid, item]));
+  const contextItems = [...new Set(options.contextItemUids ?? [])]
+    .map((uid) => byUid.get(uid))
+    .filter((item): item is ProgrammeItem => Boolean(item?.isActive && !item.isSummary));
+  const contextAssignments = assignContextItems(outcomes, contextItems, byUid);
   const deliveryOutcome = programmeDeliveryOutcome(schedule, allOutcomes);
   const weekly = latestWeeklySummary(tracker);
   return {
@@ -400,7 +439,11 @@ export function buildExecutiveRoadmapModel(schedule: ProgrammeSchedule, tracker:
     outcomes,
     paths: outcomes.map((outcome) => ({
       outcome,
-      dependencies: collectPredecessorDependencies(outcome, schedule, byUid, dateWindow, windowStart),
+      dependencies: [...new Map([
+        ...collectPredecessorDependencies(outcome, schedule, byUid, dateWindow, windowStart),
+        ...(contextAssignments.get(outcome.uid) ?? []),
+      ].filter((item) => item.uid !== outcome.uid).map((item) => [item.uid, item])).values()]
+        .sort((a, b) => bySoonest(a.finishDate, b.finishDate)),
     })),
   };
 }

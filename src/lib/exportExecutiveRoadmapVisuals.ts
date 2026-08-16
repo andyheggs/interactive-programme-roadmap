@@ -188,7 +188,7 @@ function drawMilestoneCard(doc: JsPDF, item: ProgrammeItem, x: number, y: number
   doc.text(executiveToneLabel(item), x + 15, y + h - 7.2, { align: "center" });
 }
 
-function drawPathRow(doc: JsPDF, title: string, items: ProgrammeItem[], y: number): number {
+function drawPathRow(doc: JsPDF, title: string, items: ProgrammeItem[], y: number, contextUidSet = new Set<string>()): number {
   const margin = 14;
   const pageWidth = doc.internal.pageSize.getWidth();
   const width = pageWidth - margin * 2;
@@ -218,6 +218,12 @@ function drawPathRow(doc: JsPDF, title: string, items: ProgrammeItem[], y: numbe
     doc.setFontSize(6.8);
     setText(doc, colours.ink);
     doc.text(doc.splitTextToSize(item.name, chipWidth).slice(0, 3), x, y + 23);
+    if (contextUidSet.has(item.uid)) {
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(5.8);
+      setText(doc, colours.blue);
+      doc.text("Added context", x, y + 32);
+    }
   });
   return y + rowHeight + 7;
 }
@@ -261,9 +267,10 @@ export async function exportExecutiveRoadmapImage(element: HTMLElement, schedule
   }
 }
 
-export async function exportExecutiveRoadmapPosterPdf(schedule: ProgrammeSchedule, tracker: TrackerData | undefined, dateWindow: DateWindow) {
+export async function exportExecutiveRoadmapPosterPdf(schedule: ProgrammeSchedule, tracker: TrackerData | undefined, dateWindow: DateWindow, contextItemUids: string[] = []) {
   const { default: jsPDF } = await import("jspdf");
-  const model = buildExecutiveRoadmapModel(schedule, tracker, dateWindow);
+  const model = buildExecutiveRoadmapModel(schedule, tracker, dateWindow, { contextItemUids });
+  const contextUidSet = new Set(contextItemUids);
   const doc = new jsPDF({ orientation: "landscape", unit: "mm", format: "a3" });
   addPosterHeader(doc, schedule, model.reportDate, "Executive roadmap poster");
 
@@ -306,15 +313,16 @@ export async function exportExecutiveRoadmapPosterPdf(schedule: ProgrammeSchedul
       addPosterHeader(doc, schedule, model.reportDate, "Executive roadmap poster");
       y = 44;
     }
-    y = drawPathRow(doc, path.outcome.name, [...path.dependencies, path.outcome], y);
+    y = drawPathRow(doc, path.outcome.name, [...path.dependencies, path.outcome], y, contextUidSet);
   });
 
   addPosterFooter(doc);
   doc.save(`${fileSlug(schedule.title)}-executive-roadmap-poster.pdf`);
 }
 
-export function exportExecutiveRoadmapHtml(schedule: ProgrammeSchedule, tracker: TrackerData | undefined, dateWindow: DateWindow) {
-  const model = buildExecutiveRoadmapModel(schedule, tracker, dateWindow);
+export function exportExecutiveRoadmapHtml(schedule: ProgrammeSchedule, tracker: TrackerData | undefined, dateWindow: DateWindow, contextItemUids: string[] = []) {
+  const model = buildExecutiveRoadmapModel(schedule, tracker, dateWindow, { contextItemUids });
+  const contextUidSet = new Set(contextItemUids);
   const milestoneCards = model.outcomes.map((item) => {
     const tone = executiveTone(item);
     const assessment = executiveToneAssessment(item);
@@ -332,10 +340,11 @@ export function exportExecutiveRoadmapHtml(schedule: ProgrammeSchedule, tracker:
         ${[...path.dependencies, path.outcome].map((item) => {
           const tone = executiveTone(item);
           const assessment = executiveToneAssessment(item);
-          return `<article class="node ${tone}">
+          return `<article class="node ${tone} ${contextUidSet.has(item.uid) ? "context" : ""}">
             <span>${escapeHtml(formatDate(item.finishDate))}</span>
             <i></i>
             <strong>${escapeHtml(item.name)}</strong>
+            ${contextUidSet.has(item.uid) ? "<em>Added context</em>" : ""}
             <p>${escapeHtml(assessment.summary)}</p>
           </article>`;
         }).join("")}
@@ -381,6 +390,7 @@ export function exportExecutiveRoadmapHtml(schedule: ProgrammeSchedule, tracker:
     .node { display: grid; gap: 8px; text-align: center; }
     .node i { justify-self: center; width: 18px; height: 18px; border-radius: 999px; background: var(--tone); }
     .node strong { font-size: 14px; line-height: 1.3; }
+    .node em { color: #245f8f; font-size: 11px; font-style: normal; font-weight: 900; }
     @media print { body { background: white; } main { padding: 12mm; } header { margin: -12mm -12mm 10mm; } .path, .milestone, .summary article, .legend { box-shadow: none; } }
   </style>
 </head>

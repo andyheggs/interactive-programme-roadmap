@@ -801,6 +801,8 @@ type ExecutivePath = {
   dependencies: ProgrammeItem[];
 };
 
+type ExecutiveMode = "upcoming" | "delivered" | "other";
+
 type ExecutivePathNode = {
   item: ProgrammeItem;
   depth: number;
@@ -1085,6 +1087,49 @@ function executiveDependencyPaths(schedule: ProgrammeSchedule, window: DateWindo
   return buildExecutiveRoadmapModel(schedule, undefined, window).paths;
 }
 
+function outlineParts(item: ProgrammeItem): string[] {
+  return (item.outlineNumber ?? item.wbs ?? "").split(".").map((part) => part.trim()).filter(Boolean);
+}
+
+function itemTopSummary(item: ProgrammeItem, schedule: ProgrammeSchedule): ProgrammeItem | undefined {
+  const top = outlineParts(item)[0];
+  if (!top) return undefined;
+  return schedule.items.find((entry) => entry.isSummary && (entry.outlineNumber ?? entry.wbs) === top);
+}
+
+function itemOutlineSection(item: ProgrammeItem, schedule: ProgrammeSchedule): ProgrammeItem | undefined {
+  const outline = item.outlineNumber ?? item.wbs ?? "";
+  if (!outline) return undefined;
+  return schedule.items
+    .filter((entry) => entry.isSummary && entry.outlineLevel <= 3)
+    .filter((entry) => {
+      const prefix = entry.outlineNumber ?? entry.wbs ?? "";
+      return Boolean(prefix && outline !== prefix && outline.startsWith(`${prefix}.`));
+    })
+    .sort((a, b) => b.outlineLevel - a.outlineLevel)[0];
+}
+
+function itemGroupLabel(item: ProgrammeItem, schedule: ProgrammeSchedule): string {
+  const top = item.stream ?? itemTopSummary(item, schedule)?.name ?? "Unassigned";
+  const section = itemOutlineSection(item, schedule);
+  if (!section || section.name === top) return top;
+  return `${top} / ${section.name}`;
+}
+
+function itemSearchText(item: ProgrammeItem, schedule: ProgrammeSchedule): string {
+  return normaliseText([
+    item.name,
+    item.stream,
+    itemGroupLabel(item, schedule),
+    item.outlineNumber,
+    item.wbs,
+    item.status,
+    item.milestoneLevel,
+    item.roadmapView,
+    item.resourceNames?.join(" "),
+  ].filter(Boolean).join(" "));
+}
+
 function relatedTrackerItems<T extends { stream?: string; title: string; dashboardFlag?: boolean }>(items: T[], item?: ProgrammeItem): T[] {
   const stream = normaliseText(item?.stream);
   const target = normaliseText(item?.targetMilestone ?? item?.name);
@@ -1282,6 +1327,8 @@ function ExecutiveSnapshotView({
   schedule,
   tracker,
   dateWindow,
+  contextItemUids = [],
+  onToggleContextItem,
   onExportSnapshotPdf,
   onExportSnapshotImage,
   onExportSnapshotPosterPdf,
@@ -1290,6 +1337,8 @@ function ExecutiveSnapshotView({
   schedule: ProgrammeSchedule;
   tracker?: TrackerData;
   dateWindow: DateWindow;
+  contextItemUids?: string[];
+  onToggleContextItem?: (uid: string) => void;
   onExportSnapshotPdf?: () => void;
   onExportSnapshotImage?: () => void;
   onExportSnapshotPosterPdf?: () => void;
@@ -1299,15 +1348,36 @@ function ExecutiveSnapshotView({
   const reportingDate = new Date().toISOString();
   const executiveWindow = { label: dateWindow.label, start: dateWindow.start ?? parseDate(reportingDate) };
   const allExecutiveOutcomes = executiveMilestoneItems(schedule);
-  const paths = executiveDependencyPaths(schedule, executiveWindow)
+  const contextUidSet = useMemo(() => new Set(contextItemUids), [contextItemUids]);
+  const baseModel = useMemo(() => buildExecutiveRoadmapModel(schedule, undefined, executiveWindow), [schedule, executiveWindow]);
+  const paths = buildExecutiveRoadmapModel(schedule, undefined, executiveWindow, { contextItemUids }).paths
     .filter((path) => isForwardLookingExecutiveItem(path.outcome, executiveWindow));
+  const baseDisplayedUids = useMemo(() => new Set(baseModel.paths.flatMap((path) => [path.outcome.uid, ...path.dependencies.map((item) => item.uid)])), [baseModel]);
   const deliveredMilestones = programmeMilestones(schedule)
     .filter((item) => isHighLevelMilestone(item) && isHistoricDeliveredItem(item, executiveWindow))
     .sort((a, b) => (parseDate(b.finishDate)?.getTime() ?? 0) - (parseDate(a.finishDate)?.getTime() ?? 0));
-  const [executiveMode, setExecutiveMode] = useState<"upcoming" | "delivered">("upcoming");
+  const deliveredMilestoneUids = useMemo(() => new Set(deliveredMilestones.map((item) => item.uid)), [deliveredMilestones]);
+  const [executiveMode, setExecutiveMode] = useState<ExecutiveMode>("upcoming");
   const [selectedUid, setSelectedUid] = useState(paths[0]?.outcome.uid ?? "");
   const [expandedUid, setExpandedUid] = useState("");
+  const [taskSearch, setTaskSearch] = useState("");
+  const [expandedTaskGroups, setExpandedTaskGroups] = useState<Set<string>>(() => new Set());
   const byUid = useMemo(() => new Map(schedule.items.map((item) => [item.uid, item])), [schedule.items]);
+  const normalisedTaskSearch = normaliseText(taskSearch);
+  const otherProjectTasks = useMemo(() => schedule.items
+    .filter((item) => item.isActive && !item.isSummary)
+    .filter((item) => !baseDisplayedUids.has(item.uid))
+    .filter((item) => !deliveredMilestoneUids.has(item.uid))
+    .filter((item) => !normalisedTaskSearch || itemSearchText(item, schedule).includes(normalisedTaskSearch))
+    .sort(projectOrder), [baseDisplayedUids, deliveredMilestoneUids, normalisedTaskSearch, schedule]);
+  const taskGroups = useMemo(() => {
+    const groups = new Map<string, ProgrammeItem[]>();
+    otherProjectTasks.forEach((item) => {
+      const label = itemGroupLabel(item, schedule);
+      groups.set(label, [...(groups.get(label) ?? []), item]);
+    });
+    return [...groups.entries()].sort(([a], [b]) => a.localeCompare(b));
+  }, [otherProjectTasks, schedule]);
   useEffect(() => {
     if (!paths.length) {
       if (selectedUid) setSelectedUid("");
@@ -1325,6 +1395,13 @@ function ExecutiveSnapshotView({
   const originalDeliveryDate = deliveryOutcome?.baselineFinish;
   const currentDeliveryDate = deliveryOutcome?.finishDate ?? schedule.finishDate;
   const toggleExpanded = (uid: string) => setExpandedUid((current) => current === uid ? "" : uid);
+  const toggleTaskGroup = (group: string) => setExpandedTaskGroups((current) => {
+    const next = new Set(current);
+    if (next.has(group)) next.delete(group);
+    else next.add(group);
+    return next;
+  });
+  const toggleContextItem = (uid: string) => onToggleContextItem?.(uid);
 
   return (
     <>
@@ -1377,6 +1454,15 @@ function ExecutiveSnapshotView({
               onClick={() => setExecutiveMode("delivered")}
             >
               Delivered milestones
+            </button>
+            <button
+              className={executiveMode === "other" ? "active" : ""}
+              type="button"
+              role="tab"
+              aria-selected={executiveMode === "other"}
+              onClick={() => setExecutiveMode("other")}
+            >
+              Other project tasks
             </button>
           </div>
 
@@ -1444,9 +1530,9 @@ function ExecutiveSnapshotView({
                           aria-expanded={expandedUid === item.uid}
                         >
                           <span>{formatDate(item.finishDate)}</span>
-                          <i className={`${tone} ${item.executiveMilestone ? "executive" : ""}`} />
+                          <i className={`${tone} ${item.executiveMilestone ? "executive" : ""} ${contextUidSet.has(item.uid) ? "context" : ""}`} />
                           <strong>{item.name}</strong>
-                          <small>{expandedUid === item.uid ? "Hide detail" : "Show detail"}</small>
+                          <small>{contextUidSet.has(item.uid) ? "Added context" : expandedUid === item.uid ? "Hide detail" : "Show detail"}</small>
                         </button>
                       );
                     }) : (
@@ -1535,26 +1621,88 @@ function ExecutiveSnapshotView({
             )}
           </div>
             </>
-          ) : (
+          ) : executiveMode === "delivered" ? (
             <>
               <div className="exec-section-label">
                 <h3>Delivered milestones</h3>
-                <p>Completed high-level programme milestones before {formatDate(executiveWindow.start?.toISOString())}.</p>
+                <p>Completed high-level programme milestones before {formatDate(executiveWindow.start?.toISOString())}. Add any still-important item back to its roadmap lane.</p>
               </div>
               <div className="exec-delivered-grid">
                 {deliveredMilestones.length ? deliveredMilestones.map((item) => {
                   const tone = executiveTone(item);
+                  const added = contextUidSet.has(item.uid);
                   return (
                     <article className={`exec-delivered-card ${tone}`} key={item.uid}>
                       <span>{formatDate(item.finishDate)}</span>
                       <strong>{item.name}</strong>
                       <em>{item.stream ?? item.milestoneLevel ?? item.roadmapView ?? "High-level milestone"}</em>
+                      {onToggleContextItem ? (
+                        <button className={`exec-context-action ${added ? "selected" : ""}`} type="button" onClick={() => toggleContextItem(item.uid)}>
+                          {added ? "Remove from lane" : "Add to roadmap lane"}
+                        </button>
+                      ) : null}
                     </article>
                   );
                 }) : (
                   <article className="exec-empty-state">
                     <h3>No delivered milestones found</h3>
                     <p>Completed high-level milestones will appear here once they are marked complete in the imported Project plan.</p>
+                  </article>
+                )}
+              </div>
+            </>
+          ) : (
+            <>
+              <div className="exec-section-label">
+                <h3>Other project tasks</h3>
+                <p>Browse by workstream and outline section, or search, then add useful context to the relevant executive lane.</p>
+              </div>
+              <label className="exec-task-search">
+                <Search size={16} />
+                <input
+                  type="search"
+                  value={taskSearch}
+                  onChange={(event) => setTaskSearch(event.target.value)}
+                  placeholder="Search task, workstream, owner, status or outline"
+                />
+              </label>
+              <div className="exec-task-browser">
+                {taskGroups.length ? taskGroups.map(([group, items]) => {
+                  const isExpanded = normalisedTaskSearch ? true : expandedTaskGroups.has(group);
+                  const addedCount = items.filter((item) => contextUidSet.has(item.uid)).length;
+                  return (
+                    <section className="exec-task-group" key={group}>
+                      <button className="exec-task-group-header" type="button" onClick={() => toggleTaskGroup(group)} aria-expanded={isExpanded}>
+                        <span>{group}</span>
+                        <em>{items.length} tasks{addedCount ? ` · ${addedCount} added` : ""}</em>
+                      </button>
+                      {isExpanded ? (
+                        <div className="exec-task-rows">
+                          {items.map((item) => {
+                            const added = contextUidSet.has(item.uid);
+                            return (
+                              <article className="exec-task-row" key={item.uid}>
+                                <div>
+                                  <span>{item.outlineNumber ?? item.wbs ?? "No outline"} · {formatDate(item.finishDate)}</span>
+                                  <strong>{item.name}</strong>
+                                  <em>{item.isMilestone ? "Milestone" : item.itemType} · {item.status}</em>
+                                </div>
+                                {onToggleContextItem ? (
+                                  <button className={`exec-context-action ${added ? "selected" : ""}`} type="button" onClick={() => toggleContextItem(item.uid)}>
+                                    {added ? "Remove" : "Add to lane"}
+                                  </button>
+                                ) : null}
+                              </article>
+                            );
+                          })}
+                        </div>
+                      ) : null}
+                    </section>
+                  );
+                }) : (
+                  <article className="exec-empty-state">
+                    <h3>No matching project tasks</h3>
+                    <p>Clear the search or import a fuller Project XML file.</p>
                   </article>
                 )}
               </div>
@@ -2324,6 +2472,7 @@ function DownloadsHub({
   schedule,
   tracker,
   dateWindow,
+  contextItemUids,
   onExportPdf,
   onExportPosterPdf,
   onExportJson,
@@ -2335,6 +2484,7 @@ function DownloadsHub({
   schedule: ProgrammeSchedule;
   tracker?: TrackerData;
   dateWindow: DateWindow;
+  contextItemUids: string[];
   onExportPdf: () => void;
   onExportPosterPdf: () => void;
   onExportJson: () => void;
@@ -2430,7 +2580,7 @@ function DownloadsHub({
         ))}
       </section>
       <div className="snapshot-export-mount" aria-hidden="true">
-        <ExecutiveSnapshotView schedule={schedule} tracker={tracker} dateWindow={dateWindow} />
+        <ExecutiveSnapshotView schedule={schedule} tracker={tracker} dateWindow={dateWindow} contextItemUids={contextItemUids} />
       </div>
     </>
   );
@@ -2450,6 +2600,8 @@ function ReportingContent({
   onExportSnapshotImage,
   onExportSnapshotPosterPdf,
   onExportSnapshotHtml,
+  executiveContextUids,
+  onToggleExecutiveContextItem,
   onExportWeeklyStatusPdf,
   onExportTeamActionsPdf,
 }: {
@@ -2466,6 +2618,8 @@ function ReportingContent({
   onExportSnapshotImage: () => void;
   onExportSnapshotPosterPdf: () => void;
   onExportSnapshotHtml: () => void;
+  executiveContextUids: string[];
+  onToggleExecutiveContextItem: (uid: string) => void;
   onExportWeeklyStatusPdf: () => void;
   onExportTeamActionsPdf: (items: TeamWorkItem[]) => void;
 }) {
@@ -2475,6 +2629,8 @@ function ReportingContent({
       schedule={schedule}
       tracker={tracker}
       dateWindow={dateWindow}
+      contextItemUids={executiveContextUids}
+      onToggleContextItem={onToggleExecutiveContextItem}
       onExportSnapshotPdf={onExportSnapshotPdf}
       onExportSnapshotImage={onExportSnapshotImage}
       onExportSnapshotPosterPdf={onExportSnapshotPosterPdf}
@@ -2496,6 +2652,7 @@ function ReportingContent({
       schedule={schedule}
       tracker={tracker}
       dateWindow={dateWindow}
+      contextItemUids={executiveContextUids}
       onExportPdf={onExportPdf}
       onExportPosterPdf={onExportPosterPdf}
       onExportJson={onExportJson}
@@ -2559,6 +2716,7 @@ function App() {
   const [error, setError] = useState<string | undefined>();
   const [baselineNumber, setBaselineNumber] = useState(3);
   const [sourceXml, setSourceXml] = useState<{ xml: string; fileName: string } | undefined>();
+  const [executiveContextUids, setExecutiveContextUids] = useState<string[]>([]);
   const [theme, setTheme] = useState<"light" | "dark">(() => {
     const stored = window.localStorage.getItem("roadmap-theme");
     if (stored === "light" || stored === "dark") return stored;
@@ -2585,6 +2743,11 @@ function App() {
   const visibleItems = useMemo(() => applyFilters(applyView(schedule.items, view), filters, schedule), [schedule, view, filters]);
 
   useEffect(() => {
+    const validUids = new Set(schedule.items.map((item) => item.uid));
+    setExecutiveContextUids((current) => current.filter((uid) => validUids.has(uid)));
+  }, [schedule.items]);
+
+  useEffect(() => {
     if (!sourceXml) return;
     try {
       setSchedule(parseMicrosoftProjectXml(sourceXml.xml, sourceXml.fileName, baselineNumber));
@@ -2601,6 +2764,7 @@ function App() {
       setSourceXml({ xml, fileName: file.name });
       setSchedule(parsed);
       setSelected(undefined);
+      setExecutiveContextUids([]);
     } catch (err) {
       setError(err instanceof Error ? err.message : "The file could not be imported.");
     }
@@ -2623,6 +2787,10 @@ function App() {
     link.download = `${schedule.title.replace(/[^a-z0-9]+/gi, "-").toLowerCase()}-normalised-schedule.json`;
     link.click();
     URL.revokeObjectURL(link.href);
+  }
+
+  function toggleExecutiveContextItem(uid: string) {
+    setExecutiveContextUids((current) => current.includes(uid) ? current.filter((item) => item !== uid) : [...current, uid]);
   }
 
   async function exportPdf() {
@@ -2665,7 +2833,7 @@ function App() {
   async function exportExecutiveSnapshotPdf() {
     setError(undefined);
     try {
-      await exportExecutiveRoadmapPdf({ schedule, tracker, dateWindow });
+      await exportExecutiveRoadmapPdf({ schedule, tracker, dateWindow, contextItemUids: executiveContextUids });
     } catch (err) {
       setError(err instanceof Error ? err.message : "The Executive View PDF could not be generated.");
     }
@@ -2685,7 +2853,7 @@ function App() {
   async function exportExecutiveSnapshotPosterPdf() {
     setError(undefined);
     try {
-      await exportExecutiveRoadmapPosterPdf(schedule, tracker, dateWindow);
+      await exportExecutiveRoadmapPosterPdf(schedule, tracker, dateWindow, executiveContextUids);
     } catch (err) {
       setError(err instanceof Error ? err.message : "The Executive roadmap poster PDF could not be generated.");
     }
@@ -2694,7 +2862,7 @@ function App() {
   function exportExecutiveSnapshotHtml() {
     setError(undefined);
     try {
-      exportExecutiveRoadmapHtml(schedule, tracker, dateWindow);
+      exportExecutiveRoadmapHtml(schedule, tracker, dateWindow, executiveContextUids);
     } catch (err) {
       setError(err instanceof Error ? err.message : "The Executive roadmap HTML file could not be generated.");
     }
@@ -2809,6 +2977,8 @@ function App() {
             onExportSnapshotImage={exportExecutiveSnapshotImage}
             onExportSnapshotPosterPdf={exportExecutiveSnapshotPosterPdf}
             onExportSnapshotHtml={exportExecutiveSnapshotHtml}
+            executiveContextUids={executiveContextUids}
+            onToggleExecutiveContextItem={toggleExecutiveContextItem}
             onExportWeeklyStatusPdf={exportWeeklyStatusPdf}
             onExportTeamActionsPdf={exportTeamActionsPdf}
           />
