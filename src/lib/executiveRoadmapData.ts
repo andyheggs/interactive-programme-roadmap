@@ -28,6 +28,7 @@ export type ExecutiveRoadmapModel = {
 export type ExecutiveRoadmapBuildOptions = {
   contextItemUids?: string[];
   removedItemUids?: string[];
+  laneOrderUids?: string[];
 };
 
 type ExecutivePathNode = {
@@ -419,11 +420,27 @@ export function executiveTone(item?: ProgrammeItem): ExecutiveTone {
   return executiveToneAssessment(item).tone;
 }
 
+function applyLaneOrder(outcomes: ProgrammeItem[], laneOrderUids?: string[]): ProgrammeItem[] {
+  if (!laneOrderUids?.length) return outcomes;
+  const rank = new Map(laneOrderUids.map((uid, index) => [uid, index]));
+  return [...outcomes].sort((a, b) => {
+    const aRank = rank.get(a.uid);
+    const bRank = rank.get(b.uid);
+    if (aRank !== undefined && bRank !== undefined) return aRank - bRank;
+    if (aRank !== undefined) return -1;
+    if (bRank !== undefined) return 1;
+    return bySoonest(a.finishDate, b.finishDate);
+  });
+}
+
 export function buildExecutiveRoadmapModel(schedule: ProgrammeSchedule, tracker: TrackerData | undefined, dateWindow: DateWindow, options: ExecutiveRoadmapBuildOptions = {}): ExecutiveRoadmapModel {
   const reportDate = new Date().toISOString();
   const windowStart = dateWindow.start ?? parseDate(reportDate);
   const allOutcomes = executiveMilestoneItems(schedule);
-  const outcomes = allOutcomes.filter((item) => isWithinRoadmapWindow(item, dateWindow, windowStart));
+  const outcomes = applyLaneOrder(
+    allOutcomes.filter((item) => isWithinRoadmapWindow(item, dateWindow, windowStart)),
+    options.laneOrderUids,
+  );
   const byUid = new Map(schedule.items.map((item) => [item.uid, item]));
   const removedUidSet = new Set(options.removedItemUids ?? []);
   const contextItems = [...new Set(options.contextItemUids ?? [])]

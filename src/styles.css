@@ -1265,10 +1265,43 @@ body.executive-export-light .executive-roadmap {
   border-color: var(--exec-blue);
   box-shadow: inset 0 0 0 1px rgba(143, 197, 255, 0.22);
 }
+.exec-path.dragging {
+  opacity: 0.62;
+  border-style: dashed;
+}
+.exec-path-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
 .exec-path h3 {
   margin: 0;
   color: var(--exec-text);
   font-size: 1.05rem;
+}
+.exec-lane-drag-handle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex: 0 0 auto;
+  min-height: 34px;
+  padding: 7px 10px;
+  border: 1px solid var(--exec-line);
+  border-radius: 7px;
+  color: var(--exec-muted);
+  background: rgba(126, 140, 132, 0.08);
+  font-size: 0.78rem;
+  font-weight: 900;
+  cursor: grab;
+}
+.exec-lane-drag-handle:active {
+  cursor: grabbing;
+}
+.exec-lane-drag-handle:hover {
+  color: var(--exec-text);
+  border-color: var(--exec-blue);
+  background: rgba(37, 109, 168, 0.16);
 }
 .exec-path-grid {
   display: grid;

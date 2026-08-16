@@ -13,6 +13,7 @@ import {
   FileSpreadsheet,
   Filter,
   GitBranch,
+  GripVertical,
   Layers,
   LayoutDashboard,
   Moon,
@@ -1329,9 +1330,11 @@ function ExecutiveSnapshotView({
   dateWindow,
   contextItemUids = [],
   removedItemUids = [],
+  laneOrderUids = [],
   onToggleContextItem,
   onRemoveRoadmapItem,
   onRestoreRoadmapItem,
+  onReorderLanes,
   onExportSnapshotPdf,
   onExportSnapshotImage,
   onExportSnapshotPosterPdf,
@@ -1342,9 +1345,11 @@ function ExecutiveSnapshotView({
   dateWindow: DateWindow;
   contextItemUids?: string[];
   removedItemUids?: string[];
+  laneOrderUids?: string[];
   onToggleContextItem?: (uid: string) => void;
   onRemoveRoadmapItem?: (uid: string) => void;
   onRestoreRoadmapItem?: (uid: string) => void;
+  onReorderLanes?: (orderedUids: string[]) => void;
   onExportSnapshotPdf?: () => void;
   onExportSnapshotImage?: () => void;
   onExportSnapshotPosterPdf?: () => void;
@@ -1356,7 +1361,7 @@ function ExecutiveSnapshotView({
   const allExecutiveOutcomes = executiveMilestoneItems(schedule);
   const contextUidSet = useMemo(() => new Set(contextItemUids), [contextItemUids]);
   const baseModel = useMemo(() => buildExecutiveRoadmapModel(schedule, undefined, executiveWindow), [schedule, executiveWindow]);
-  const paths = buildExecutiveRoadmapModel(schedule, undefined, executiveWindow, { contextItemUids, removedItemUids }).paths
+  const paths = buildExecutiveRoadmapModel(schedule, undefined, executiveWindow, { contextItemUids, removedItemUids, laneOrderUids }).paths
     .filter((path) => isForwardLookingExecutiveItem(path.outcome, executiveWindow));
   const baseDisplayedUids = useMemo(() => new Set(baseModel.paths.flatMap((path) => [path.outcome.uid, ...path.dependencies.map((item) => item.uid)])), [baseModel]);
   const deliveredMilestones = programmeMilestones(schedule)
@@ -1366,6 +1371,7 @@ function ExecutiveSnapshotView({
   const [executiveMode, setExecutiveMode] = useState<ExecutiveMode>("upcoming");
   const [selectedUid, setSelectedUid] = useState(paths[0]?.outcome.uid ?? "");
   const [expandedUid, setExpandedUid] = useState("");
+  const [draggedLaneUid, setDraggedLaneUid] = useState("");
   const [taskSearch, setTaskSearch] = useState("");
   const [expandedTaskGroups, setExpandedTaskGroups] = useState<Set<string>>(() => new Set());
   const byUid = useMemo(() => new Map(schedule.items.map((item) => [item.uid, item])), [schedule.items]);
@@ -1418,6 +1424,15 @@ function ExecutiveSnapshotView({
     if (expandedUid === uid) setExpandedUid("");
   };
   const restoreRoadmapItem = (uid: string) => onRestoreRoadmapItem?.(uid);
+  const moveLane = (sourceUid: string, targetUid: string) => {
+    if (!onReorderLanes || sourceUid === targetUid) return;
+    const currentOrder = paths.map((path) => path.outcome.uid);
+    const nextOrder = currentOrder.filter((uid) => uid !== sourceUid);
+    const targetIndex = nextOrder.indexOf(targetUid);
+    if (targetIndex === -1) return;
+    nextOrder.splice(targetIndex, 0, sourceUid);
+    onReorderLanes(nextOrder);
+  };
 
   return (
     <>
@@ -1528,8 +1543,41 @@ function ExecutiveSnapshotView({
               const expandedPredecessors = expandedItem ? closestDirectPredecessors(expandedItem, byUid, 2) : [];
               const expandedAssessment = expandedItem ? executiveToneAssessment(expandedItem) : undefined;
               return (
-              <article className={`exec-path ${path.outcome.uid === selectedPath?.outcome.uid ? "selected" : ""}`} key={path.outcome.uid}>
-                <h3>{path.outcome.targetMilestone || path.outcome.name}</h3>
+              <article
+                className={`exec-path ${path.outcome.uid === selectedPath?.outcome.uid ? "selected" : ""} ${draggedLaneUid === path.outcome.uid ? "dragging" : ""}`}
+                key={path.outcome.uid}
+                onDragOver={(event) => {
+                  if (!onReorderLanes || !draggedLaneUid || draggedLaneUid === path.outcome.uid) return;
+                  event.preventDefault();
+                  event.dataTransfer.dropEffect = "move";
+                }}
+                onDrop={(event) => {
+                  event.preventDefault();
+                  const sourceUid = event.dataTransfer.getData("text/plain") || draggedLaneUid;
+                  moveLane(sourceUid, path.outcome.uid);
+                  setDraggedLaneUid("");
+                }}
+              >
+                <div className="exec-path-title">
+                  <h3>{path.outcome.targetMilestone || path.outcome.name}</h3>
+                  {onReorderLanes ? (
+                    <button
+                      className="exec-lane-drag-handle"
+                      type="button"
+                      draggable
+                      onDragStart={(event) => {
+                        setDraggedLaneUid(path.outcome.uid);
+                        event.dataTransfer.effectAllowed = "move";
+                        event.dataTransfer.setData("text/plain", path.outcome.uid);
+                      }}
+                      onDragEnd={() => setDraggedLaneUid("")}
+                      aria-label={`Drag ${path.outcome.name} lane`}
+                    >
+                      <GripVertical size={16} />
+                      <span>Drag lane</span>
+                    </button>
+                  ) : null}
+                </div>
                 <div className="exec-path-grid">
                   <div className="exec-sequence" aria-label={`${path.outcome.name} dependency pathway`}>
                     {path.dependencies.length ? path.dependencies.map((item) => {
@@ -2512,6 +2560,7 @@ function DownloadsHub({
   dateWindow,
   contextItemUids,
   removedItemUids,
+  laneOrderUids,
   onExportPdf,
   onExportPosterPdf,
   onExportJson,
@@ -2525,6 +2574,7 @@ function DownloadsHub({
   dateWindow: DateWindow;
   contextItemUids: string[];
   removedItemUids: string[];
+  laneOrderUids: string[];
   onExportPdf: () => void;
   onExportPosterPdf: () => void;
   onExportJson: () => void;
@@ -2620,7 +2670,7 @@ function DownloadsHub({
         ))}
       </section>
       <div className="snapshot-export-mount" aria-hidden="true">
-        <ExecutiveSnapshotView schedule={schedule} tracker={tracker} dateWindow={dateWindow} contextItemUids={contextItemUids} removedItemUids={removedItemUids} />
+        <ExecutiveSnapshotView schedule={schedule} tracker={tracker} dateWindow={dateWindow} contextItemUids={contextItemUids} removedItemUids={removedItemUids} laneOrderUids={laneOrderUids} />
       </div>
     </>
   );
@@ -2642,9 +2692,11 @@ function ReportingContent({
   onExportSnapshotHtml,
   executiveContextUids,
   executiveRemovedUids,
+  executiveLaneOrderUids,
   onToggleExecutiveContextItem,
   onRemoveExecutiveRoadmapItem,
   onRestoreExecutiveRoadmapItem,
+  onReorderExecutiveLanes,
   onExportWeeklyStatusPdf,
   onExportTeamActionsPdf,
 }: {
@@ -2663,9 +2715,11 @@ function ReportingContent({
   onExportSnapshotHtml: () => void;
   executiveContextUids: string[];
   executiveRemovedUids: string[];
+  executiveLaneOrderUids: string[];
   onToggleExecutiveContextItem: (uid: string) => void;
   onRemoveExecutiveRoadmapItem: (uid: string) => void;
   onRestoreExecutiveRoadmapItem: (uid: string) => void;
+  onReorderExecutiveLanes: (orderedUids: string[]) => void;
   onExportWeeklyStatusPdf: () => void;
   onExportTeamActionsPdf: (items: TeamWorkItem[]) => void;
 }) {
@@ -2677,9 +2731,11 @@ function ReportingContent({
       dateWindow={dateWindow}
       contextItemUids={executiveContextUids}
       removedItemUids={executiveRemovedUids}
+      laneOrderUids={executiveLaneOrderUids}
       onToggleContextItem={onToggleExecutiveContextItem}
       onRemoveRoadmapItem={onRemoveExecutiveRoadmapItem}
       onRestoreRoadmapItem={onRestoreExecutiveRoadmapItem}
+      onReorderLanes={onReorderExecutiveLanes}
       onExportSnapshotPdf={onExportSnapshotPdf}
       onExportSnapshotImage={onExportSnapshotImage}
       onExportSnapshotPosterPdf={onExportSnapshotPosterPdf}
@@ -2703,6 +2759,7 @@ function ReportingContent({
       dateWindow={dateWindow}
       contextItemUids={executiveContextUids}
       removedItemUids={executiveRemovedUids}
+      laneOrderUids={executiveLaneOrderUids}
       onExportPdf={onExportPdf}
       onExportPosterPdf={onExportPosterPdf}
       onExportJson={onExportJson}
@@ -2768,6 +2825,7 @@ function App() {
   const [sourceXml, setSourceXml] = useState<{ xml: string; fileName: string } | undefined>();
   const [executiveContextUids, setExecutiveContextUids] = useState<string[]>([]);
   const [executiveRemovedUids, setExecutiveRemovedUids] = useState<string[]>([]);
+  const [executiveLaneOrderUids, setExecutiveLaneOrderUids] = useState<string[]>([]);
   const [theme, setTheme] = useState<"light" | "dark">(() => {
     const stored = window.localStorage.getItem("roadmap-theme");
     if (stored === "light" || stored === "dark") return stored;
@@ -2797,6 +2855,7 @@ function App() {
     const validUids = new Set(schedule.items.map((item) => item.uid));
     setExecutiveContextUids((current) => current.filter((uid) => validUids.has(uid)));
     setExecutiveRemovedUids((current) => current.filter((uid) => validUids.has(uid)));
+    setExecutiveLaneOrderUids((current) => current.filter((uid) => validUids.has(uid)));
   }, [schedule.items]);
 
   useEffect(() => {
@@ -2818,6 +2877,7 @@ function App() {
       setSelected(undefined);
       setExecutiveContextUids([]);
       setExecutiveRemovedUids([]);
+      setExecutiveLaneOrderUids([]);
     } catch (err) {
       setError(err instanceof Error ? err.message : "The file could not be imported.");
     }
@@ -2854,6 +2914,10 @@ function App() {
 
   function restoreExecutiveRoadmapItem(uid: string) {
     setExecutiveRemovedUids((current) => current.filter((item) => item !== uid));
+  }
+
+  function reorderExecutiveLanes(orderedUids: string[]) {
+    setExecutiveLaneOrderUids(orderedUids);
   }
 
   async function exportPdf() {
@@ -2896,7 +2960,7 @@ function App() {
   async function exportExecutiveSnapshotPdf() {
     setError(undefined);
     try {
-      await exportExecutiveRoadmapPdf({ schedule, tracker, dateWindow, contextItemUids: executiveContextUids, removedItemUids: executiveRemovedUids });
+      await exportExecutiveRoadmapPdf({ schedule, tracker, dateWindow, contextItemUids: executiveContextUids, removedItemUids: executiveRemovedUids, laneOrderUids: executiveLaneOrderUids });
     } catch (err) {
       setError(err instanceof Error ? err.message : "The Executive View PDF could not be generated.");
     }
@@ -2916,7 +2980,7 @@ function App() {
   async function exportExecutiveSnapshotPosterPdf() {
     setError(undefined);
     try {
-      await exportExecutiveRoadmapPosterPdf(schedule, tracker, dateWindow, executiveContextUids, executiveRemovedUids);
+      await exportExecutiveRoadmapPosterPdf(schedule, tracker, dateWindow, executiveContextUids, executiveRemovedUids, executiveLaneOrderUids);
     } catch (err) {
       setError(err instanceof Error ? err.message : "The Executive roadmap poster PDF could not be generated.");
     }
@@ -2925,7 +2989,7 @@ function App() {
   function exportExecutiveSnapshotHtml() {
     setError(undefined);
     try {
-      exportExecutiveRoadmapHtml(schedule, tracker, dateWindow, executiveContextUids, executiveRemovedUids);
+      exportExecutiveRoadmapHtml(schedule, tracker, dateWindow, executiveContextUids, executiveRemovedUids, executiveLaneOrderUids);
     } catch (err) {
       setError(err instanceof Error ? err.message : "The Executive roadmap HTML file could not be generated.");
     }
@@ -3042,9 +3106,11 @@ function App() {
             onExportSnapshotHtml={exportExecutiveSnapshotHtml}
             executiveContextUids={executiveContextUids}
             executiveRemovedUids={executiveRemovedUids}
+            executiveLaneOrderUids={executiveLaneOrderUids}
             onToggleExecutiveContextItem={toggleExecutiveContextItem}
             onRemoveExecutiveRoadmapItem={removeExecutiveRoadmapItem}
             onRestoreExecutiveRoadmapItem={restoreExecutiveRoadmapItem}
+            onReorderExecutiveLanes={reorderExecutiveLanes}
             onExportWeeklyStatusPdf={exportWeeklyStatusPdf}
             onExportTeamActionsPdf={exportTeamActionsPdf}
           />
