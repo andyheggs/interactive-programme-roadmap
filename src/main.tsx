@@ -1841,7 +1841,7 @@ function WeeklyExecutiveStatusView({
   const reportingDate = weekly?.meetingDate ?? weekly?.weekEnding ?? new Date().toISOString();
   const forwardWindow = { ...dateWindow, start: dateWindow.start ?? parseDate(reportingDate) };
   const upcomingMilestones = programmeMilestones(schedule)
-    .filter((item) => isHighLevelMilestone(item) && dateWithin(item.finishDate, forwardWindow) && item.status !== "complete")
+    .filter((item) => item.isMilestone && dateWithin(item.finishDate, forwardWindow) && item.status !== "complete")
     .sort((a, b) => bySoonest(a.finishDate, b.finishDate))
     .slice(0, 5);
   const significantChanges = (tracker?.changes ?? [])
@@ -1906,7 +1906,7 @@ function WeeklyExecutiveStatusView({
             <strong>{mainBlocker ?? "None flagged"}</strong>
           </article>
           <article>
-            <span>Next key date</span>
+            <span>Next milestone</span>
             <strong>{upcomingMilestones[0] ? `${formatDate(upcomingMilestones[0].finishDate)} - ${upcomingMilestones[0].name}` : "None in window"}</strong>
           </article>
         </section>
@@ -1930,7 +1930,7 @@ function WeeklyExecutiveStatusView({
 
         <section className="weekly-grid">
           <article className="weekly-card">
-            <h3>Upcoming key milestones</h3>
+            <h3>Upcoming milestones</h3>
             {upcomingMilestones.map((item) => (
               <div className="weekly-row" key={item.uid}>
                 <span>{formatDate(item.finishDate)}</span>
@@ -1938,7 +1938,7 @@ function WeeklyExecutiveStatusView({
                 <em>{item.stream ?? item.milestoneLevel ?? "Milestone"}</em>
               </div>
             ))}
-            {!upcomingMilestones.length ? <p>No upcoming high-level dates found in the selected date window.</p> : null}
+            {!upcomingMilestones.length ? <p>No upcoming milestones found in the selected date window.</p> : null}
           </article>
           <article className="weekly-card">
             <h3>Risks / issues</h3>

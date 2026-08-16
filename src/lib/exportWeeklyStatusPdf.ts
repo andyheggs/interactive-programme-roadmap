@@ -325,7 +325,7 @@ export async function exportWeeklyStatusPdf({ schedule, tracker, dateWindow }: E
   const reportDate = weekly?.meetingDate ?? weekly?.weekEnding ?? new Date().toISOString();
   const forwardWindow = { ...dateWindow, start: dateWindow.start ?? parseDate(reportDate) };
   const upcomingMilestones = programmeMilestones(schedule)
-    .filter((item) => isHighLevelMilestone(item) && dateWithin(item.finishDate, forwardWindow) && item.status !== "complete")
+    .filter((item) => item.isMilestone && dateWithin(item.finishDate, forwardWindow) && item.status !== "complete")
     .sort((a, b) => bySoonest(a.finishDate, b.finishDate))
     .slice(0, 8);
   const risksIssues = [
@@ -384,7 +384,7 @@ export async function exportWeeklyStatusPdf({ schedule, tracker, dateWindow }: E
   addBox(doc, 18 + cardWidth, y, cardWidth, 22, "Delivery confidence", deliveryConfidence);
   y += 27;
   addBox(doc, 12, y, cardWidth, 28, "Main blocker", mainBlocker);
-  addBox(doc, 18 + cardWidth, y, cardWidth, 28, "Next key milestone", nextKeyDate);
+  addBox(doc, 18 + cardWidth, y, cardWidth, 28, "Next milestone", nextKeyDate);
   y += 34;
 
   y = addNarrativeBox(doc, y, "Last week", progressItems, "No weekly progress summary found.");
@@ -396,7 +396,7 @@ export async function exportWeeklyStatusPdf({ schedule, tracker, dateWindow }: E
   table(
     doc,
     autoTable,
-    "Upcoming key milestones",
+    "Upcoming milestones",
     y,
     ["Date", "Milestone", "Stream", "Status"],
     upcomingMilestones.map((item) => [formatDate(item.finishDate), item.name, item.stream ?? item.milestoneLevel ?? "-", item.status]),
