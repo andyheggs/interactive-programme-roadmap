@@ -1914,6 +1914,14 @@ body.executive-export-light .executive-roadmap {
   padding: 10px 0;
   border-bottom: 1px solid var(--border-soft);
 }
+.weekly-row.curated {
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: start;
+  gap: 10px;
+}
+.weekly-row.curated.dragging {
+  opacity: 0.58;
+}
 .weekly-row:last-child {
   border-bottom: 0;
 }
@@ -1930,6 +1938,121 @@ body.executive-export-light .executive-roadmap {
   color: var(--muted);
   font-size: 0.8rem;
   font-style: normal;
+}
+.weekly-row-controls {
+  display: inline-flex;
+  gap: 5px;
+}
+.weekly-drag-handle,
+.weekly-remove-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  color: var(--muted);
+  background: var(--surface-alt);
+}
+.weekly-drag-handle {
+  cursor: grab;
+}
+.weekly-drag-handle:active {
+  cursor: grabbing;
+}
+.weekly-remove-button {
+  cursor: pointer;
+}
+.weekly-drag-handle:hover {
+  color: var(--active);
+  border-color: var(--active);
+}
+.weekly-remove-button:hover {
+  color: #b33a32;
+  border-color: #b33a32;
+  background: rgba(179, 58, 50, 0.08);
+}
+.weekly-curation-tools {
+  display: grid;
+  gap: 12px;
+  padding: 16px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+}
+.weekly-tool-header {
+  display: flex;
+  align-items: start;
+  justify-content: space-between;
+  gap: 16px;
+}
+.weekly-tool-header h3,
+.weekly-source-list h4 {
+  margin: 0 0 6px;
+  color: var(--text-strong);
+}
+.weekly-tool-header p,
+.weekly-source-list p {
+  margin: 0;
+  color: var(--muted);
+  line-height: 1.4;
+}
+.weekly-tool-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.weekly-tool-buttons button,
+.weekly-source-row button {
+  min-height: 34px;
+  padding: 7px 11px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  color: var(--text-strong);
+  background: var(--surface-alt);
+  font-weight: 800;
+  cursor: pointer;
+}
+.weekly-tool-buttons button:hover,
+.weekly-source-row button:hover {
+  border-color: var(--active);
+  color: var(--active);
+}
+.weekly-source-list {
+  display: grid;
+  gap: 10px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border-soft);
+}
+.weekly-source-list > div {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 10px;
+}
+.weekly-source-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: start;
+  padding: 12px;
+  border: 1px solid var(--border-soft);
+  border-radius: 8px;
+  background: var(--surface-alt);
+}
+.weekly-source-row span,
+.weekly-source-row em {
+  display: block;
+  color: var(--muted);
+  font-size: 0.76rem;
+  font-style: normal;
+  font-weight: 800;
+}
+.weekly-source-row strong {
+  display: block;
+  margin: 4px 0;
+  color: var(--text-strong);
+  line-height: 1.3;
 }
 
 .team-actions-view {

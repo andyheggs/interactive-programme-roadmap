@@ -1,6 +1,6 @@
 import type { jsPDF as JsPDF } from "jspdf";
 import type { ProgrammeItem, ProgrammeSchedule } from "../types/programme";
-import type { TrackerChange, TrackerData, TrackerDecision, TrackerIssue, TrackerRisk } from "../types/reporting";
+import type { TrackerChange, TrackerData, TrackerDecision, TrackerIssue, TrackerRisk, WeeklyStatusCuration, WeeklyStatusSectionKey } from "../types/reporting";
 import { formatDate, parseDate } from "./dateUtils";
 
 type DateWindow = {
@@ -13,11 +13,22 @@ type ExportWeeklyStatusOptions = {
   schedule: ProgrammeSchedule;
   tracker?: TrackerData;
   dateWindow: DateWindow;
+  curation?: WeeklyStatusCuration;
 };
 
 type Rgb = [number, number, number];
 type AutoTable = typeof import("jspdf-autotable").default;
 type TableRow = Array<string | number>;
+
+type WeeklyRiskIssueItem = {
+  id: string;
+  title: string;
+  marker: string;
+  owner: string;
+  update: string;
+  dashboardFlag?: boolean;
+  kind: "Risk" | "Issue";
+};
 
 const colours: Record<"ink" | "muted" | "deep" | "line" | "pale" | "green" | "amber" | "red" | "blue", Rgb> = {
   ink: [28, 38, 33],
@@ -126,6 +137,10 @@ function isOpenStatus(status?: string): boolean {
   return !["complete", "completed", "closed", "done"].includes(value);
 }
 
+function isCompleteStatus(status?: string): boolean {
+  return ["complete", "completed", "closed", "done", "resolved", "implemented"].includes(normaliseText(status));
+}
+
 function itemImportance(item: ProgrammeItem): number {
   const level = normaliseText(item.milestoneLevel);
   if (item.executiveMilestone || level.includes("executive")) return 5;
@@ -144,6 +159,69 @@ function programmeMilestones(schedule: ProgrammeSchedule): ProgrammeItem[] {
   return schedule.items
     .filter((item) => item.isMilestone || item.roadmapMilestone)
     .sort((a, b) => itemImportance(b) - itemImportance(a) || bySoonest(a.finishDate, b.finishDate));
+}
+
+function uniqueItems(items: ProgrammeItem[]): ProgrammeItem[] {
+  const seen = new Set<string>();
+  return items.filter((item) => {
+    if (seen.has(item.uid)) return false;
+    seen.add(item.uid);
+    return true;
+  });
+}
+
+function isDeliveredItem(item: ProgrammeItem): boolean {
+  return item.status === "complete" || item.percentComplete === 100;
+}
+
+function weeklyCurationEntry(curation: WeeklyStatusCuration, section: WeeklyStatusSectionKey) {
+  return curation[section] ?? { order: [], hidden: [] };
+}
+
+function curateWeeklyItems<T>(
+  defaultItems: T[],
+  allItems: T[],
+  section: WeeklyStatusSectionKey,
+  curation: WeeklyStatusCuration,
+  idFor: (item: T) => string,
+  limit: number,
+): T[] {
+  const entry = weeklyCurationEntry(curation, section);
+  const hidden = new Set(entry.hidden);
+  const allById = new Map(allItems.map((item) => [idFor(item), item]));
+  const ordered = entry.order
+    .map((id) => allById.get(id))
+    .filter((item): item is T => Boolean(item && !hidden.has(idFor(item))));
+  const orderedIds = new Set(ordered.map(idFor));
+  const defaults = defaultItems.filter((item) => !hidden.has(idFor(item)) && !orderedIds.has(idFor(item)));
+  return [...ordered, ...defaults].slice(0, limit);
+}
+
+function weeklyRiskIssueCandidates(tracker?: TrackerData): WeeklyRiskIssueItem[] {
+  return [
+    ...(tracker?.risks ?? [])
+      .filter((risk) => isOpenStatus(risk.status))
+      .map((risk: TrackerRisk) => ({
+        id: `risk-${risk.id}`,
+        title: risk.title,
+        marker: risk.rag ?? risk.status ?? "Risk",
+        owner: risk.owner ?? risk.stream ?? "-",
+        update: risk.latestUpdate ?? risk.mitigation ?? risk.impact ?? "-",
+        dashboardFlag: risk.dashboardFlag,
+        kind: "Risk" as const,
+      })),
+    ...(tracker?.issues ?? [])
+      .filter((issue) => isOpenStatus(issue.status))
+      .map((issue: TrackerIssue) => ({
+        id: `issue-${issue.id}`,
+        title: issue.title,
+        marker: issue.rag ?? issue.priority ?? issue.status ?? "Issue",
+        owner: issue.owner ?? issue.stream ?? "-",
+        update: issue.latestUpdate ?? issue.requiredAction ?? issue.impact ?? "-",
+        dashboardFlag: issue.dashboardFlag,
+        kind: "Issue" as const,
+      })),
+  ].sort((a, b) => Number(Boolean(b.dashboardFlag)) - Number(Boolean(a.dashboardFlag)));
 }
 
 function isOutstandingDecision(decision: TrackerDecision): boolean {
@@ -319,25 +397,38 @@ function addFooters(doc: JsPDF) {
   }
 }
 
-export async function exportWeeklyStatusPdf({ schedule, tracker, dateWindow }: ExportWeeklyStatusOptions) {
+export async function exportWeeklyStatusPdf({ schedule, tracker, dateWindow, curation = {} }: ExportWeeklyStatusOptions) {
   const [{ default: jsPDF }, { default: autoTable }] = await Promise.all([import("jspdf"), import("jspdf-autotable")]);
   const weekly = latestWeeklySummary(tracker);
   const reportDate = weekly?.meetingDate ?? weekly?.weekEnding ?? new Date().toISOString();
   const forwardWindow = { ...dateWindow, start: dateWindow.start ?? parseDate(reportDate) };
-  const upcomingMilestones = programmeMilestones(schedule)
+  const upcomingMilestoneSource = programmeMilestones(schedule)
     .filter((item) => item.isMilestone && dateWithin(item.finishDate, forwardWindow) && item.status !== "complete")
-    .sort((a, b) => bySoonest(a.finishDate, b.finishDate))
-    .slice(0, 8);
-  const risksIssues = [
-    ...(tracker?.risks ?? [])
-      .filter((risk) => isOpenStatus(risk.status) && (risk.dashboardFlag || isRedOrAmber(risk.rag)))
-      .map((risk: TrackerRisk) => ({ id: `risk-${risk.id}`, title: risk.title, marker: risk.rag ?? risk.status ?? "Risk", owner: risk.owner ?? risk.stream ?? "-", update: risk.latestUpdate ?? risk.mitigation ?? risk.impact ?? "-" })),
-    ...(tracker?.issues ?? [])
-      .filter((issue) => isOpenStatus(issue.status) && (issue.dashboardFlag || isRedOrAmber(issue.rag) || isRedOrAmber(issue.priority)))
-      .map((issue: TrackerIssue) => ({ id: `issue-${issue.id}`, title: issue.title, marker: issue.rag ?? issue.priority ?? issue.status ?? "Issue", owner: issue.owner ?? issue.stream ?? "-", update: issue.latestUpdate ?? issue.requiredAction ?? issue.impact ?? "-" })),
-  ].slice(0, 8);
-  const decisionsNeeded = (tracker?.decisions ?? []).filter(isOutstandingDecision).sort(decisionSort).slice(0, 8);
-  const significantChanges = (tracker?.changes ?? []).filter(isSignificantChange).sort(changeSort).slice(0, 8);
+    .sort((a, b) => bySoonest(a.finishDate, b.finishDate));
+  const completedMilestoneSource = programmeMilestones(schedule)
+    .filter((item) => item.isMilestone && isDeliveredItem(item))
+    .sort((a, b) => (parseDate(b.finishDate)?.getTime() ?? 0) - (parseDate(a.finishDate)?.getTime() ?? 0));
+  const upcomingMilestones = curateWeeklyItems(
+    upcomingMilestoneSource,
+    uniqueItems([...upcomingMilestoneSource, ...completedMilestoneSource]),
+    "milestones",
+    curation,
+    (item) => item.uid,
+    5,
+  );
+  const allRisksIssues = weeklyRiskIssueCandidates(tracker);
+  const risksIssues = curateWeeklyItems(
+    allRisksIssues.filter((item) => item.dashboardFlag || isRedOrAmber(item.marker)),
+    allRisksIssues,
+    "risksIssues",
+    curation,
+    (item) => item.id,
+    5,
+  );
+  const allDecisions = (tracker?.decisions ?? []).filter((decision) => !isCompleteStatus(decision.status)).sort(decisionSort);
+  const decisionsNeeded = curateWeeklyItems(allDecisions.filter(isOutstandingDecision), allDecisions, "decisions", curation, (decision) => `decision-${decision.id}`, 5);
+  const allChanges = (tracker?.changes ?? []).filter((change) => !isCompleteStatus(change.status)).sort(changeSort);
+  const significantChanges = curateWeeklyItems(allChanges.filter(isSignificantChange), allChanges, "changes", curation, (change) => `change-${change.id}`, 5);
   const movement = weeklyMovement(tracker) ?? "Not captured";
   const deliveryConfidence = meaningfulText(weekly?.goLiveConfidence) ?? "Not captured";
   const mainBlocker = meaningfulText(weekly?.mainBlocker) ?? risksIssues[0]?.title ?? "None flagged";

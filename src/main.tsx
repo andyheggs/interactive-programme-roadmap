@@ -41,7 +41,7 @@ import { parseMicrosoftProjectXml } from "./lib/parseMicrosoftProjectXml";
 import { parseMeetingTracker } from "./lib/parseMeetingTracker";
 import { clamp, durationLabel, formatDate, parseDate, uniqueSorted } from "./lib/dateUtils";
 import type { ProgrammeFilters, ProgrammeItem, ProgrammeSchedule, ProgrammeView } from "./types/programme";
-import type { TrackerAction, TrackerChange, TrackerData, TrackerDecision, TrackerIssue, TrackerRisk } from "./types/reporting";
+import type { TrackerAction, TrackerChange, TrackerData, TrackerDecision, TrackerIssue, TrackerRisk, WeeklyStatusCuration, WeeklyStatusSectionKey } from "./types/reporting";
 import "./styles.css";
 
 const initialFilters: ProgrammeFilters = {
@@ -1826,40 +1826,130 @@ function ExecutiveSnapshotView({
   );
 }
 
+type WeeklyRiskIssueItem = {
+  id: string;
+  title: string;
+  meta?: string;
+  status?: string;
+  stream?: string;
+  dashboardFlag?: boolean;
+  kind: "Risk" | "Issue";
+};
+
+type WeeklyDragItem = {
+  section: WeeklyStatusSectionKey;
+  id: string;
+};
+
+const weeklySectionLabels: Record<WeeklyStatusSectionKey, string> = {
+  milestones: "milestones",
+  risksIssues: "risks / issues",
+  decisions: "decisions",
+  changes: "changes",
+};
+
+function weeklyCurationEntry(curation: WeeklyStatusCuration, section: WeeklyStatusSectionKey) {
+  return curation[section] ?? { order: [], hidden: [] };
+}
+
+function curateWeeklyItems<T>(
+  defaultItems: T[],
+  allItems: T[],
+  section: WeeklyStatusSectionKey,
+  curation: WeeklyStatusCuration,
+  idFor: (item: T) => string,
+  limit: number,
+): T[] {
+  const entry = weeklyCurationEntry(curation, section);
+  const hidden = new Set(entry.hidden);
+  const allById = new Map(allItems.map((item) => [idFor(item), item]));
+  const ordered = entry.order
+    .map((id) => allById.get(id))
+    .filter((item): item is T => Boolean(item && !hidden.has(idFor(item))));
+  const orderedIds = new Set(ordered.map(idFor));
+  const defaults = defaultItems.filter((item) => !hidden.has(idFor(item)) && !orderedIds.has(idFor(item)));
+  return [...ordered, ...defaults].slice(0, limit);
+}
+
+function remainingWeeklyItems<T>(allItems: T[], visibleItems: T[], idFor: (item: T) => string): T[] {
+  const visible = new Set(visibleItems.map(idFor));
+  return allItems.filter((item) => !visible.has(idFor(item)));
+}
+
+function weeklyRiskIssueCandidates(tracker?: TrackerData): WeeklyRiskIssueItem[] {
+  return sortFlaggedFirst([
+    ...openRisks(tracker)
+      .map((risk) => ({
+        id: `risk-${risk.id}`,
+        title: risk.title,
+        meta: risk.latestUpdate ?? risk.mitigation ?? risk.impact ?? "",
+        status: risk.rag ?? risk.status,
+        stream: risk.stream,
+        dashboardFlag: risk.dashboardFlag,
+        kind: "Risk" as const,
+      })),
+    ...openIssues(tracker)
+      .map((issue) => ({
+        id: `issue-${issue.id}`,
+        title: issue.title,
+        meta: issue.latestUpdate ?? issue.requiredAction ?? issue.impact ?? "",
+        status: issue.rag ?? issue.priority ?? issue.status,
+        stream: issue.stream,
+        dashboardFlag: issue.dashboardFlag,
+        kind: "Issue" as const,
+      })),
+  ]);
+}
+
 function WeeklyExecutiveStatusView({
   schedule,
   tracker,
   dateWindow,
+  curation,
+  onUpdateCuration,
   onExportPdf,
 }: {
   schedule: ProgrammeSchedule;
   tracker?: TrackerData;
   dateWindow: DateWindow;
+  curation: WeeklyStatusCuration;
+  onUpdateCuration: (updater: (current: WeeklyStatusCuration) => WeeklyStatusCuration) => void;
   onExportPdf: () => void;
 }) {
   const weekly = latestWeeklySummary(tracker);
   const reportingDate = weekly?.meetingDate ?? weekly?.weekEnding ?? new Date().toISOString();
   const forwardWindow = { ...dateWindow, start: dateWindow.start ?? parseDate(reportingDate) };
-  const upcomingMilestones = programmeMilestones(schedule)
+  const upcomingMilestoneSource = programmeMilestones(schedule)
     .filter((item) => item.isMilestone && dateWithin(item.finishDate, forwardWindow) && item.status !== "complete")
-    .sort((a, b) => bySoonest(a.finishDate, b.finishDate))
-    .slice(0, 5);
-  const significantChanges = (tracker?.changes ?? [])
+    .sort((a, b) => bySoonest(a.finishDate, b.finishDate));
+  const completedMilestoneSource = programmeMilestones(schedule)
+    .filter((item) => item.isMilestone && isDeliveredItem(item))
+    .sort((a, b) => (parseDate(b.finishDate)?.getTime() ?? 0) - (parseDate(a.finishDate)?.getTime() ?? 0));
+  const milestoneSource = uniqueItems([...upcomingMilestoneSource, ...completedMilestoneSource]);
+  const upcomingMilestones = curateWeeklyItems(upcomingMilestoneSource, milestoneSource, "milestones", curation, (item) => item.uid, 5);
+  const allRisksIssues = weeklyRiskIssueCandidates(tracker);
+  const defaultRisksIssues = allRisksIssues.filter((item) => item.dashboardFlag || isRedOrAmber(item.status));
+  const risksIssues = curateWeeklyItems(defaultRisksIssues, allRisksIssues, "risksIssues", curation, (item) => item.id, 5);
+  const allDecisions = (tracker?.decisions ?? [])
+    .filter((decision) => !isCompleteStatus(decision.status))
+    .sort(decisionSort);
+  const defaultDecisions = allDecisions.filter(isOutstandingDecision);
+  const decisionsNeeded = curateWeeklyItems(defaultDecisions, allDecisions, "decisions", curation, (decision) => `decision-${decision.id}`, 5);
+  const allChanges = (tracker?.changes ?? [])
+    .filter((change) => !isCompleteStatus(change.status))
+    .sort(changeSort);
+  const significantChangeSource = allChanges
     .filter(isSignificantChange)
-    .sort(changeSort)
-    .slice(0, 5);
-  const risksIssues = sortFlaggedFirst([
-    ...openRisks(tracker)
-      .filter((risk) => risk.dashboardFlag || isRedOrAmber(risk.rag))
-      .map((risk) => ({ id: `risk-${risk.id}`, title: risk.title, meta: risk.latestUpdate ?? risk.mitigation ?? risk.impact ?? "", status: risk.rag ?? risk.status, stream: risk.stream, dashboardFlag: risk.dashboardFlag })),
-    ...openIssues(tracker)
-      .filter((issue) => issue.dashboardFlag || isRedOrAmber(issue.rag) || isRedOrAmber(issue.priority))
-      .map((issue) => ({ id: `issue-${issue.id}`, title: issue.title, meta: issue.latestUpdate ?? issue.requiredAction ?? issue.impact ?? "", status: issue.rag ?? issue.priority ?? issue.status, stream: issue.stream, dashboardFlag: issue.dashboardFlag })),
-  ]).slice(0, 5);
-  const decisionsNeeded = (tracker?.decisions ?? [])
-    .filter(isOutstandingDecision)
-    .sort(decisionSort)
-    .slice(0, 5);
+    .sort(changeSort);
+  const significantChanges = curateWeeklyItems(significantChangeSource, allChanges, "changes", curation, (change) => `change-${change.id}`, 5);
+  const moreUpcomingMilestones = remainingWeeklyItems(upcomingMilestoneSource, upcomingMilestones, (item) => item.uid);
+  const moreCompletedMilestones = remainingWeeklyItems(completedMilestoneSource, upcomingMilestones, (item) => item.uid);
+  const moreRisks = remainingWeeklyItems(allRisksIssues.filter((item) => item.kind === "Risk"), risksIssues, (item) => item.id);
+  const moreIssues = remainingWeeklyItems(allRisksIssues.filter((item) => item.kind === "Issue"), risksIssues, (item) => item.id);
+  const moreDecisions = remainingWeeklyItems(allDecisions, decisionsNeeded, (decision) => `decision-${decision.id}`);
+  const moreChanges = remainingWeeklyItems(allChanges, significantChanges, (change) => `change-${change.id}`);
+  const [expandedTools, setExpandedTools] = useState<Set<string>>(() => new Set());
+  const [dragItem, setDragItem] = useState<WeeklyDragItem | undefined>();
   const ragTone = toneClass(weekly?.overallRag);
   const movement = weeklyMovement(tracker);
   const deliveryConfidence = meaningfulText(weekly?.goLiveConfidence);
@@ -1870,6 +1960,83 @@ function WeeklyExecutiveStatusView({
   const trackerStatus = tracker
     ? `${tracker.sourceFileName ?? "Tracker workbook"} | ${tracker.weeklySummaries.length} weekly summaries | ${tracker.risks.length} risks | ${tracker.issues.length} issues | ${tracker.actions.length} actions`
     : "Import the latest tracker workbook to populate RAG, weekly narrative, risks, decisions and actions.";
+  const updateCurationSection = (
+    section: WeeklyStatusSectionKey,
+    transform: (entry: { order: string[]; hidden: string[] }) => { order: string[]; hidden: string[] },
+  ) => {
+    onUpdateCuration((current) => ({
+      ...current,
+      [section]: transform(weeklyCurationEntry(current, section)),
+    }));
+  };
+  const removeFromWeeklySection = (section: WeeklyStatusSectionKey, id: string) => {
+    updateCurationSection(section, (entry) => ({
+      order: entry.order.filter((item) => item !== id),
+      hidden: entry.hidden.includes(id) ? entry.hidden : [...entry.hidden, id],
+    }));
+  };
+  const addToWeeklySection = (section: WeeklyStatusSectionKey, id: string) => {
+    updateCurationSection(section, (entry) => ({
+      order: [id, ...entry.order.filter((item) => item !== id)],
+      hidden: entry.hidden.filter((item) => item !== id),
+    }));
+  };
+  const reorderWeeklySection = (section: WeeklyStatusSectionKey, orderedVisibleIds: string[]) => {
+    updateCurationSection(section, (entry) => ({
+      order: [...orderedVisibleIds, ...entry.order.filter((id) => !orderedVisibleIds.includes(id))],
+      hidden: entry.hidden,
+    }));
+  };
+  const moveWeeklyItem = (section: WeeklyStatusSectionKey, sourceId: string, targetId: string, visibleIds: string[]) => {
+    if (sourceId === targetId) return;
+    const next = visibleIds.filter((id) => id !== sourceId);
+    const targetIndex = next.indexOf(targetId);
+    if (targetIndex === -1) return;
+    next.splice(targetIndex, 0, sourceId);
+    reorderWeeklySection(section, next);
+  };
+  const toggleTool = (tool: string) => setExpandedTools((current) => {
+    const next = new Set(current);
+    if (next.has(tool)) next.delete(tool);
+    else next.add(tool);
+    return next;
+  });
+
+  const renderControls = (section: WeeklyStatusSectionKey, id: string, visibleIds: string[]) => (
+    <div className="weekly-row-controls">
+      <button
+        type="button"
+        className="weekly-drag-handle"
+        draggable
+        onDragStart={(event) => {
+          setDragItem({ section, id });
+          event.dataTransfer.effectAllowed = "move";
+          event.dataTransfer.setData("text/plain", id);
+        }}
+        onDragEnd={() => setDragItem(undefined)}
+        aria-label={`Drag ${weeklySectionLabels[section]} item`}
+      >
+        <GripVertical size={14} />
+      </button>
+      <button type="button" className="weekly-remove-button" onClick={() => removeFromWeeklySection(section, id)} aria-label={`Remove from ${weeklySectionLabels[section]}`}>
+        <X size={14} />
+      </button>
+    </div>
+  );
+
+  const rowDropHandlers = (section: WeeklyStatusSectionKey, targetId: string, visibleIds: string[]) => ({
+    onDragOver: (event: React.DragEvent) => {
+      if (!dragItem || dragItem.section !== section || dragItem.id === targetId) return;
+      event.preventDefault();
+      event.dataTransfer.dropEffect = "move";
+    },
+    onDrop: (event: React.DragEvent) => {
+      event.preventDefault();
+      const sourceId = event.dataTransfer.getData("text/plain") || dragItem?.id;
+      if (sourceId) moveWeeklyItem(section, sourceId, targetId, visibleIds);
+      setDragItem(undefined);
+    },
+  });
 
   return (
     <>
@@ -1931,50 +2098,139 @@ function WeeklyExecutiveStatusView({
         <section className="weekly-grid">
           <article className="weekly-card">
             <h3>Upcoming milestones</h3>
-            {upcomingMilestones.map((item) => (
-              <div className="weekly-row" key={item.uid}>
-                <span>{formatDate(item.finishDate)}</span>
-                <strong>{item.name}</strong>
-                <em>{item.stream ?? item.milestoneLevel ?? "Milestone"}</em>
-              </div>
-            ))}
+            {(() => {
+              const visibleIds = upcomingMilestones.map((item) => item.uid);
+              return upcomingMilestones.map((item) => (
+                <div className={`weekly-row curated ${dragItem?.id === item.uid ? "dragging" : ""}`} key={item.uid} {...rowDropHandlers("milestones", item.uid, visibleIds)}>
+                  <div>
+                    <span>{formatDate(item.finishDate)}</span>
+                    <strong>{item.name}</strong>
+                    <em>{item.stream ?? item.milestoneLevel ?? "Milestone"}</em>
+                  </div>
+                  {renderControls("milestones", item.uid, visibleIds)}
+                </div>
+              ));
+            })()}
             {!upcomingMilestones.length ? <p>No upcoming milestones found in the selected date window.</p> : null}
           </article>
           <article className="weekly-card">
             <h3>Risks / issues</h3>
-            {risksIssues.map((item) => (
-              <div className="weekly-row" key={item.id}>
-                <span>{item.status ?? "Open"}</span>
-                <strong>{item.title}</strong>
-                <em>{item.stream ?? item.meta}</em>
-              </div>
-            ))}
+            {(() => {
+              const visibleIds = risksIssues.map((item) => item.id);
+              return risksIssues.map((item) => (
+                <div className={`weekly-row curated ${dragItem?.id === item.id ? "dragging" : ""}`} key={item.id} {...rowDropHandlers("risksIssues", item.id, visibleIds)}>
+                  <div>
+                    <span>{item.status ?? item.kind}</span>
+                    <strong>{item.title}</strong>
+                    <em>{item.stream ?? item.meta}</em>
+                  </div>
+                  {renderControls("risksIssues", item.id, visibleIds)}
+                </div>
+              ));
+            })()}
             {!risksIssues.length ? <p>No dashboard or red/amber risks or issues currently flagged.</p> : null}
           </article>
           <article className="weekly-card">
             <h3>Decisions needed</h3>
-            {decisionsNeeded.map((decision) => (
-              <div className="weekly-row" key={decision.id}>
-                <span>{formatDateOrText(decision.decisionRequiredBy ?? decision.decisionDate, "Decision date tbc")}</span>
-                <strong>{decision.title}</strong>
-                <em>{decision.decisionMaker ?? decision.owner ?? decision.status ?? "Decision required"}</em>
-              </div>
-            ))}
+            {(() => {
+              const visibleIds = decisionsNeeded.map((decision) => `decision-${decision.id}`);
+              return decisionsNeeded.map((decision) => {
+                const id = `decision-${decision.id}`;
+                return (
+                  <div className={`weekly-row curated ${dragItem?.id === id ? "dragging" : ""}`} key={decision.id} {...rowDropHandlers("decisions", id, visibleIds)}>
+                    <div>
+                      <span>{formatDateOrText(decision.decisionRequiredBy ?? decision.decisionDate, "Decision date tbc")}</span>
+                      <strong>{decision.title}</strong>
+                      <em>{decision.decisionMaker ?? decision.owner ?? decision.status ?? "Decision required"}</em>
+                    </div>
+                    {renderControls("decisions", id, visibleIds)}
+                  </div>
+                );
+              });
+            })()}
             {!decisionsNeeded.length ? <p>No outstanding executive decisions currently flagged.</p> : null}
           </article>
           <article className="weekly-card">
             <h3>Significant changes</h3>
-            {significantChanges.map((change) => (
-              <div className="weekly-row" key={change.id}>
-                <span>{formatDate(change.lastDiscussedDate ?? change.dateRaised)}</span>
-                <strong>{change.title}</strong>
-                <em>{meaningfulText(change.decisionRequired) ?? meaningfulText(change.impactOnTime) ?? meaningfulText(change.impactOnScope) ?? meaningfulText(change.impactOnCost) ?? meaningfulText(change.impactOnQualityOrBenefits) ?? change.status ?? "Significant change"}</em>
-              </div>
-            ))}
+            {(() => {
+              const visibleIds = significantChanges.map((change) => `change-${change.id}`);
+              return significantChanges.map((change) => {
+                const id = `change-${change.id}`;
+                return (
+                  <div className={`weekly-row curated ${dragItem?.id === id ? "dragging" : ""}`} key={change.id} {...rowDropHandlers("changes", id, visibleIds)}>
+                    <div>
+                      <span>{formatDate(change.lastDiscussedDate ?? change.dateRaised)}</span>
+                      <strong>{change.title}</strong>
+                      <em>{meaningfulText(change.decisionRequired) ?? meaningfulText(change.impactOnTime) ?? meaningfulText(change.impactOnScope) ?? meaningfulText(change.impactOnCost) ?? meaningfulText(change.impactOnQualityOrBenefits) ?? change.status ?? "Significant change"}</em>
+                    </div>
+                    {renderControls("changes", id, visibleIds)}
+                  </div>
+                );
+              });
+            })()}
             {!significantChanges.length ? <p>No significant changes currently flagged for leadership visibility.</p> : null}
           </article>
         </section>
       </div>
+      <section className="weekly-curation-tools" aria-label="Weekly status extra items">
+        <div className="weekly-tool-header">
+          <div>
+            <h3>Status update source items</h3>
+            <p>Use these screen-only panels to add relevant items into the weekly status. They are not printed unless you add the item to a main card above.</p>
+          </div>
+          <button type="button" className="download-action secondary" onClick={() => onUpdateCuration(() => ({}))}>Reset weekly selection</button>
+        </div>
+        <div className="weekly-tool-buttons">
+          <button type="button" onClick={() => toggleTool("upcoming")}>More upcoming milestones ({moreUpcomingMilestones.length})</button>
+          <button type="button" onClick={() => toggleTool("completed")}>Completed milestones ({moreCompletedMilestones.length})</button>
+          <button type="button" onClick={() => toggleTool("risks")}>More risks ({moreRisks.length})</button>
+          <button type="button" onClick={() => toggleTool("issues")}>More issues ({moreIssues.length})</button>
+          <button type="button" onClick={() => toggleTool("decisions")}>More decisions ({moreDecisions.length})</button>
+          <button type="button" onClick={() => toggleTool("changes")}>More changes ({moreChanges.length})</button>
+        </div>
+        {expandedTools.has("upcoming") ? (
+          <WeeklySourceList
+            title="More upcoming milestones"
+            items={moreUpcomingMilestones.map((item) => ({ id: item.uid, title: item.name, eyebrow: formatDate(item.finishDate), meta: item.stream ?? item.milestoneLevel ?? "Milestone" }))}
+            onAdd={(id) => addToWeeklySection("milestones", id)}
+          />
+        ) : null}
+        {expandedTools.has("completed") ? (
+          <WeeklySourceList
+            title="Completed milestones"
+            items={moreCompletedMilestones.map((item) => ({ id: item.uid, title: item.name, eyebrow: formatDate(item.finishDate), meta: item.stream ?? item.milestoneLevel ?? "Milestone" }))}
+            onAdd={(id) => addToWeeklySection("milestones", id)}
+          />
+        ) : null}
+        {expandedTools.has("risks") ? (
+          <WeeklySourceList
+            title="More risks"
+            items={moreRisks.map((item) => ({ id: item.id, title: item.title, eyebrow: item.status ?? "Risk", meta: item.stream ?? item.meta ?? "" }))}
+            onAdd={(id) => addToWeeklySection("risksIssues", id)}
+          />
+        ) : null}
+        {expandedTools.has("issues") ? (
+          <WeeklySourceList
+            title="More issues"
+            items={moreIssues.map((item) => ({ id: item.id, title: item.title, eyebrow: item.status ?? "Issue", meta: item.stream ?? item.meta ?? "" }))}
+            onAdd={(id) => addToWeeklySection("risksIssues", id)}
+          />
+        ) : null}
+        {expandedTools.has("decisions") ? (
+          <WeeklySourceList
+            title="More decisions"
+            items={moreDecisions.map((decision) => ({ id: `decision-${decision.id}`, title: decision.title, eyebrow: formatDateOrText(decision.decisionRequiredBy ?? decision.decisionDate, "Decision date tbc"), meta: decision.decisionMaker ?? decision.owner ?? decision.status ?? "" }))}
+            onAdd={(id) => addToWeeklySection("decisions", id)}
+          />
+        ) : null}
+        {expandedTools.has("changes") ? (
+          <WeeklySourceList
+            title="More changes"
+            items={moreChanges.map((change) => ({ id: `change-${change.id}`, title: change.title, eyebrow: formatDate(change.lastDiscussedDate ?? change.dateRaised), meta: meaningfulText(change.decisionRequired) ?? meaningfulText(change.impactOnTime) ?? meaningfulText(change.impactOnScope) ?? change.status ?? "" }))}
+            onAdd={(id) => addToWeeklySection("changes", id)}
+          />
+        ) : null}
+      </section>
       <div className="snapshot-actions">
         <button className="download-action" type="button" onClick={onExportPdf}>
           <Download size={15} />
@@ -1982,6 +2238,38 @@ function WeeklyExecutiveStatusView({
         </button>
       </div>
     </>
+  );
+}
+
+function WeeklySourceList({
+  title,
+  items,
+  onAdd,
+}: {
+  title: string;
+  items: Array<{ id: string; title: string; eyebrow?: string; meta?: string }>;
+  onAdd: (id: string) => void;
+}) {
+  return (
+    <section className="weekly-source-list">
+      <h4>{title}</h4>
+      {items.length ? (
+        <div>
+          {items.map((item) => (
+            <article className="weekly-source-row" key={item.id}>
+              <div>
+                <span>{item.eyebrow ?? "Available"}</span>
+                <strong>{item.title}</strong>
+                {item.meta ? <em>{item.meta}</em> : null}
+              </div>
+              <button type="button" onClick={() => onAdd(item.id)}>Add to status</button>
+            </article>
+          ))}
+        </div>
+      ) : (
+        <p>No additional items available.</p>
+      )}
+    </section>
   );
 }
 
@@ -2697,6 +2985,8 @@ function ReportingContent({
   onRemoveExecutiveRoadmapItem,
   onRestoreExecutiveRoadmapItem,
   onReorderExecutiveLanes,
+  weeklyStatusCuration,
+  onUpdateWeeklyStatusCuration,
   onExportWeeklyStatusPdf,
   onExportTeamActionsPdf,
 }: {
@@ -2720,6 +3010,8 @@ function ReportingContent({
   onRemoveExecutiveRoadmapItem: (uid: string) => void;
   onRestoreExecutiveRoadmapItem: (uid: string) => void;
   onReorderExecutiveLanes: (orderedUids: string[]) => void;
+  weeklyStatusCuration: WeeklyStatusCuration;
+  onUpdateWeeklyStatusCuration: (updater: (current: WeeklyStatusCuration) => WeeklyStatusCuration) => void;
   onExportWeeklyStatusPdf: () => void;
   onExportTeamActionsPdf: (items: TeamWorkItem[]) => void;
 }) {
@@ -2742,7 +3034,16 @@ function ReportingContent({
       onExportSnapshotHtml={onExportSnapshotHtml}
     />
   );
-  if (page === "weekly-status") return <WeeklyExecutiveStatusView schedule={schedule} tracker={tracker} dateWindow={dateWindow} onExportPdf={onExportWeeklyStatusPdf} />;
+  if (page === "weekly-status") return (
+    <WeeklyExecutiveStatusView
+      schedule={schedule}
+      tracker={tracker}
+      dateWindow={dateWindow}
+      curation={weeklyStatusCuration}
+      onUpdateCuration={onUpdateWeeklyStatusCuration}
+      onExportPdf={onExportWeeklyStatusPdf}
+    />
+  );
   if (page === "team-actions") return <TeamActionTrackerView schedule={schedule} tracker={tracker} dateWindow={dateWindow} onExportPdf={onExportTeamActionsPdf} />;
   if (page === "board") return <BoardReportView schedule={schedule} tracker={tracker} dateWindow={dateWindow} />;
   if (page === "reporting-roadmap") return <ReportingRoadmapView schedule={schedule} dateWindow={dateWindow} selected={selected} onSelect={setSelected} />;
@@ -2826,6 +3127,7 @@ function App() {
   const [executiveContextUids, setExecutiveContextUids] = useState<string[]>([]);
   const [executiveRemovedUids, setExecutiveRemovedUids] = useState<string[]>([]);
   const [executiveLaneOrderUids, setExecutiveLaneOrderUids] = useState<string[]>([]);
+  const [weeklyStatusCuration, setWeeklyStatusCuration] = useState<WeeklyStatusCuration>({});
   const [theme, setTheme] = useState<"light" | "dark">(() => {
     const stored = window.localStorage.getItem("roadmap-theme");
     if (stored === "light" || stored === "dark") return stored;
@@ -2878,6 +3180,7 @@ function App() {
       setExecutiveContextUids([]);
       setExecutiveRemovedUids([]);
       setExecutiveLaneOrderUids([]);
+      setWeeklyStatusCuration({});
     } catch (err) {
       setError(err instanceof Error ? err.message : "The file could not be imported.");
     }
@@ -2888,6 +3191,7 @@ function App() {
     try {
       const parsed = await parseMeetingTracker(file);
       setTracker(parsed);
+      setWeeklyStatusCuration({});
     } catch (err) {
       setError(err instanceof Error ? err.message : "The tracker workbook could not be imported.");
     }
@@ -2998,7 +3302,7 @@ function App() {
   async function exportWeeklyStatusPdf() {
     setError(undefined);
     try {
-      await exportWeeklyStatusA4Pdf({ schedule, tracker, dateWindow });
+      await exportWeeklyStatusA4Pdf({ schedule, tracker, dateWindow, curation: weeklyStatusCuration });
     } catch (err) {
       setError(err instanceof Error ? err.message : "The Weekly Executive Status PDF could not be generated.");
     }
@@ -3111,6 +3415,8 @@ function App() {
             onRemoveExecutiveRoadmapItem={removeExecutiveRoadmapItem}
             onRestoreExecutiveRoadmapItem={restoreExecutiveRoadmapItem}
             onReorderExecutiveLanes={reorderExecutiveLanes}
+            weeklyStatusCuration={weeklyStatusCuration}
+            onUpdateWeeklyStatusCuration={setWeeklyStatusCuration}
             onExportWeeklyStatusPdf={exportWeeklyStatusPdf}
             onExportTeamActionsPdf={exportTeamActionsPdf}
           />

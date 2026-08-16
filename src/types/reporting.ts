@@ -124,6 +124,13 @@ export type TrackerChange = {
   latestUpdate?: string;
 };
 
+export type WeeklyStatusSectionKey = "milestones" | "risksIssues" | "decisions" | "changes";
+
+export type WeeklyStatusCuration = Partial<Record<WeeklyStatusSectionKey, {
+  order: string[];
+  hidden: string[];
+}>>;
+
 export type MeetingMinute = {
   id: string;
   meetingDate?: string;
