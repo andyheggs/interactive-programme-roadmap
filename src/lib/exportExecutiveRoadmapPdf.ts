@@ -15,6 +15,7 @@ type ExportExecutiveRoadmapOptions = {
   tracker?: TrackerData;
   dateWindow: DateWindow;
   contextItemUids?: string[];
+  removedItemUids?: string[];
 };
 
 type ExecutiveTone = "green" | "blue" | "amber" | "red" | "grey";
@@ -335,10 +336,10 @@ function table(
   return ((doc as JsPDF & { lastAutoTable?: { finalY: number } }).lastAutoTable?.finalY ?? y + 20) + 10;
 }
 
-export async function exportExecutiveRoadmapPdf({ schedule, tracker, dateWindow, contextItemUids = [] }: ExportExecutiveRoadmapOptions) {
+export async function exportExecutiveRoadmapPdf({ schedule, tracker, dateWindow, contextItemUids = [], removedItemUids = [] }: ExportExecutiveRoadmapOptions) {
   const [{ default: jsPDF }, { default: autoTable }] = await Promise.all([import("jspdf"), import("jspdf-autotable")]);
   const reportDate = new Date().toISOString();
-  const model = buildExecutiveRoadmapModel(schedule, tracker, dateWindow, { contextItemUids });
+  const model = buildExecutiveRoadmapModel(schedule, tracker, dateWindow, { contextItemUids, removedItemUids });
   const contextUidSet = new Set(contextItemUids);
   const outcomesAll = executiveMilestoneItems(schedule);
   const outcomes = model.outcomes;

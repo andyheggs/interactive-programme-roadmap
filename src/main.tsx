@@ -1328,7 +1328,10 @@ function ExecutiveSnapshotView({
   tracker,
   dateWindow,
   contextItemUids = [],
+  removedItemUids = [],
   onToggleContextItem,
+  onRemoveRoadmapItem,
+  onRestoreRoadmapItem,
   onExportSnapshotPdf,
   onExportSnapshotImage,
   onExportSnapshotPosterPdf,
@@ -1338,7 +1341,10 @@ function ExecutiveSnapshotView({
   tracker?: TrackerData;
   dateWindow: DateWindow;
   contextItemUids?: string[];
+  removedItemUids?: string[];
   onToggleContextItem?: (uid: string) => void;
+  onRemoveRoadmapItem?: (uid: string) => void;
+  onRestoreRoadmapItem?: (uid: string) => void;
   onExportSnapshotPdf?: () => void;
   onExportSnapshotImage?: () => void;
   onExportSnapshotPosterPdf?: () => void;
@@ -1350,7 +1356,7 @@ function ExecutiveSnapshotView({
   const allExecutiveOutcomes = executiveMilestoneItems(schedule);
   const contextUidSet = useMemo(() => new Set(contextItemUids), [contextItemUids]);
   const baseModel = useMemo(() => buildExecutiveRoadmapModel(schedule, undefined, executiveWindow), [schedule, executiveWindow]);
-  const paths = buildExecutiveRoadmapModel(schedule, undefined, executiveWindow, { contextItemUids }).paths
+  const paths = buildExecutiveRoadmapModel(schedule, undefined, executiveWindow, { contextItemUids, removedItemUids }).paths
     .filter((path) => isForwardLookingExecutiveItem(path.outcome, executiveWindow));
   const baseDisplayedUids = useMemo(() => new Set(baseModel.paths.flatMap((path) => [path.outcome.uid, ...path.dependencies.map((item) => item.uid)])), [baseModel]);
   const deliveredMilestones = programmeMilestones(schedule)
@@ -1363,6 +1369,10 @@ function ExecutiveSnapshotView({
   const [taskSearch, setTaskSearch] = useState("");
   const [expandedTaskGroups, setExpandedTaskGroups] = useState<Set<string>>(() => new Set());
   const byUid = useMemo(() => new Map(schedule.items.map((item) => [item.uid, item])), [schedule.items]);
+  const removedItems = useMemo(() => removedItemUids
+    .map((uid) => byUid.get(uid))
+    .filter((item): item is ProgrammeItem => Boolean(item))
+    .sort(projectOrder), [byUid, removedItemUids]);
   const normalisedTaskSearch = normaliseText(taskSearch);
   const otherProjectTasks = useMemo(() => schedule.items
     .filter((item) => item.isActive && !item.isSummary)
@@ -1402,6 +1412,12 @@ function ExecutiveSnapshotView({
     return next;
   });
   const toggleContextItem = (uid: string) => onToggleContextItem?.(uid);
+  const removeRoadmapItem = (uid: string) => {
+    if (contextUidSet.has(uid)) onToggleContextItem?.(uid);
+    else onRemoveRoadmapItem?.(uid);
+    if (expandedUid === uid) setExpandedUid("");
+  };
+  const restoreRoadmapItem = (uid: string) => onRestoreRoadmapItem?.(uid);
 
   return (
     <>
@@ -1565,6 +1581,11 @@ function ExecutiveSnapshotView({
                       <span>Expanded pathway item</span>
                       <h4>{expandedItem.name}</h4>
                       <p>{formatDate(expandedItem.finishDate)} · {expandedItem.stream ?? expandedItem.milestoneLevel ?? expandedItem.dependencyLevel ?? "Project plan item"}</p>
+                      {expandedItem.uid !== path.outcome.uid && onRemoveRoadmapItem ? (
+                        <button className="exec-context-action danger" type="button" onClick={() => removeRoadmapItem(expandedItem.uid)}>
+                          Remove from roadmap
+                        </button>
+                      ) : null}
                       {expandedAssessment ? (
                         <div className={`exec-rag-explainer ${expandedAssessment.tone}`}>
                           <strong>{expandedItem ? executiveToneLabel(expandedItem) : executiveToneLabels[expandedAssessment.tone]} status rationale</strong>
@@ -1620,6 +1641,23 @@ function ExecutiveSnapshotView({
               </article>
             )}
           </div>
+          {removedItems.length ? (
+            <div className="exec-hidden-roadmap">
+              <div>
+                <h3>Hidden roadmap items</h3>
+                <p>These items are hidden from the Executive Roadmap only. Restore them at any time; the Project plan is unchanged.</p>
+              </div>
+              <div>
+                {removedItems.map((item) => (
+                  <button className="exec-hidden-chip" type="button" key={item.uid} onClick={() => restoreRoadmapItem(item.uid)}>
+                    <span>{formatDate(item.finishDate)}</span>
+                    <strong>{item.name}</strong>
+                    <em>Restore</em>
+                  </button>
+                ))}
+              </div>
+            </div>
+          ) : null}
             </>
           ) : executiveMode === "delivered" ? (
             <>
@@ -2473,6 +2511,7 @@ function DownloadsHub({
   tracker,
   dateWindow,
   contextItemUids,
+  removedItemUids,
   onExportPdf,
   onExportPosterPdf,
   onExportJson,
@@ -2485,6 +2524,7 @@ function DownloadsHub({
   tracker?: TrackerData;
   dateWindow: DateWindow;
   contextItemUids: string[];
+  removedItemUids: string[];
   onExportPdf: () => void;
   onExportPosterPdf: () => void;
   onExportJson: () => void;
@@ -2580,7 +2620,7 @@ function DownloadsHub({
         ))}
       </section>
       <div className="snapshot-export-mount" aria-hidden="true">
-        <ExecutiveSnapshotView schedule={schedule} tracker={tracker} dateWindow={dateWindow} contextItemUids={contextItemUids} />
+        <ExecutiveSnapshotView schedule={schedule} tracker={tracker} dateWindow={dateWindow} contextItemUids={contextItemUids} removedItemUids={removedItemUids} />
       </div>
     </>
   );
@@ -2601,7 +2641,10 @@ function ReportingContent({
   onExportSnapshotPosterPdf,
   onExportSnapshotHtml,
   executiveContextUids,
+  executiveRemovedUids,
   onToggleExecutiveContextItem,
+  onRemoveExecutiveRoadmapItem,
+  onRestoreExecutiveRoadmapItem,
   onExportWeeklyStatusPdf,
   onExportTeamActionsPdf,
 }: {
@@ -2619,7 +2662,10 @@ function ReportingContent({
   onExportSnapshotPosterPdf: () => void;
   onExportSnapshotHtml: () => void;
   executiveContextUids: string[];
+  executiveRemovedUids: string[];
   onToggleExecutiveContextItem: (uid: string) => void;
+  onRemoveExecutiveRoadmapItem: (uid: string) => void;
+  onRestoreExecutiveRoadmapItem: (uid: string) => void;
   onExportWeeklyStatusPdf: () => void;
   onExportTeamActionsPdf: (items: TeamWorkItem[]) => void;
 }) {
@@ -2630,7 +2676,10 @@ function ReportingContent({
       tracker={tracker}
       dateWindow={dateWindow}
       contextItemUids={executiveContextUids}
+      removedItemUids={executiveRemovedUids}
       onToggleContextItem={onToggleExecutiveContextItem}
+      onRemoveRoadmapItem={onRemoveExecutiveRoadmapItem}
+      onRestoreRoadmapItem={onRestoreExecutiveRoadmapItem}
       onExportSnapshotPdf={onExportSnapshotPdf}
       onExportSnapshotImage={onExportSnapshotImage}
       onExportSnapshotPosterPdf={onExportSnapshotPosterPdf}
@@ -2653,6 +2702,7 @@ function ReportingContent({
       tracker={tracker}
       dateWindow={dateWindow}
       contextItemUids={executiveContextUids}
+      removedItemUids={executiveRemovedUids}
       onExportPdf={onExportPdf}
       onExportPosterPdf={onExportPosterPdf}
       onExportJson={onExportJson}
@@ -2717,6 +2767,7 @@ function App() {
   const [baselineNumber, setBaselineNumber] = useState(3);
   const [sourceXml, setSourceXml] = useState<{ xml: string; fileName: string } | undefined>();
   const [executiveContextUids, setExecutiveContextUids] = useState<string[]>([]);
+  const [executiveRemovedUids, setExecutiveRemovedUids] = useState<string[]>([]);
   const [theme, setTheme] = useState<"light" | "dark">(() => {
     const stored = window.localStorage.getItem("roadmap-theme");
     if (stored === "light" || stored === "dark") return stored;
@@ -2745,6 +2796,7 @@ function App() {
   useEffect(() => {
     const validUids = new Set(schedule.items.map((item) => item.uid));
     setExecutiveContextUids((current) => current.filter((uid) => validUids.has(uid)));
+    setExecutiveRemovedUids((current) => current.filter((uid) => validUids.has(uid)));
   }, [schedule.items]);
 
   useEffect(() => {
@@ -2765,6 +2817,7 @@ function App() {
       setSchedule(parsed);
       setSelected(undefined);
       setExecutiveContextUids([]);
+      setExecutiveRemovedUids([]);
     } catch (err) {
       setError(err instanceof Error ? err.message : "The file could not be imported.");
     }
@@ -2791,6 +2844,16 @@ function App() {
 
   function toggleExecutiveContextItem(uid: string) {
     setExecutiveContextUids((current) => current.includes(uid) ? current.filter((item) => item !== uid) : [...current, uid]);
+    setExecutiveRemovedUids((current) => current.filter((item) => item !== uid));
+  }
+
+  function removeExecutiveRoadmapItem(uid: string) {
+    setExecutiveContextUids((current) => current.filter((item) => item !== uid));
+    setExecutiveRemovedUids((current) => current.includes(uid) ? current : [...current, uid]);
+  }
+
+  function restoreExecutiveRoadmapItem(uid: string) {
+    setExecutiveRemovedUids((current) => current.filter((item) => item !== uid));
   }
 
   async function exportPdf() {
@@ -2833,7 +2896,7 @@ function App() {
   async function exportExecutiveSnapshotPdf() {
     setError(undefined);
     try {
-      await exportExecutiveRoadmapPdf({ schedule, tracker, dateWindow, contextItemUids: executiveContextUids });
+      await exportExecutiveRoadmapPdf({ schedule, tracker, dateWindow, contextItemUids: executiveContextUids, removedItemUids: executiveRemovedUids });
     } catch (err) {
       setError(err instanceof Error ? err.message : "The Executive View PDF could not be generated.");
     }
@@ -2853,7 +2916,7 @@ function App() {
   async function exportExecutiveSnapshotPosterPdf() {
     setError(undefined);
     try {
-      await exportExecutiveRoadmapPosterPdf(schedule, tracker, dateWindow, executiveContextUids);
+      await exportExecutiveRoadmapPosterPdf(schedule, tracker, dateWindow, executiveContextUids, executiveRemovedUids);
     } catch (err) {
       setError(err instanceof Error ? err.message : "The Executive roadmap poster PDF could not be generated.");
     }
@@ -2862,7 +2925,7 @@ function App() {
   function exportExecutiveSnapshotHtml() {
     setError(undefined);
     try {
-      exportExecutiveRoadmapHtml(schedule, tracker, dateWindow, executiveContextUids);
+      exportExecutiveRoadmapHtml(schedule, tracker, dateWindow, executiveContextUids, executiveRemovedUids);
     } catch (err) {
       setError(err instanceof Error ? err.message : "The Executive roadmap HTML file could not be generated.");
     }
@@ -2978,7 +3041,10 @@ function App() {
             onExportSnapshotPosterPdf={exportExecutiveSnapshotPosterPdf}
             onExportSnapshotHtml={exportExecutiveSnapshotHtml}
             executiveContextUids={executiveContextUids}
+            executiveRemovedUids={executiveRemovedUids}
             onToggleExecutiveContextItem={toggleExecutiveContextItem}
+            onRemoveExecutiveRoadmapItem={removeExecutiveRoadmapItem}
+            onRestoreExecutiveRoadmapItem={restoreExecutiveRoadmapItem}
             onExportWeeklyStatusPdf={exportWeeklyStatusPdf}
             onExportTeamActionsPdf={exportTeamActionsPdf}
           />

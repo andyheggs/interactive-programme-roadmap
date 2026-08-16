@@ -27,6 +27,7 @@ export type ExecutiveRoadmapModel = {
 
 export type ExecutiveRoadmapBuildOptions = {
   contextItemUids?: string[];
+  removedItemUids?: string[];
 };
 
 type ExecutivePathNode = {
@@ -424,9 +425,10 @@ export function buildExecutiveRoadmapModel(schedule: ProgrammeSchedule, tracker:
   const allOutcomes = executiveMilestoneItems(schedule);
   const outcomes = allOutcomes.filter((item) => isWithinRoadmapWindow(item, dateWindow, windowStart));
   const byUid = new Map(schedule.items.map((item) => [item.uid, item]));
+  const removedUidSet = new Set(options.removedItemUids ?? []);
   const contextItems = [...new Set(options.contextItemUids ?? [])]
     .map((uid) => byUid.get(uid))
-    .filter((item): item is ProgrammeItem => Boolean(item?.isActive && !item.isSummary));
+    .filter((item): item is ProgrammeItem => Boolean(item?.isActive && !item.isSummary && !removedUidSet.has(item.uid)));
   const contextAssignments = assignContextItems(outcomes, contextItems, byUid);
   const deliveryOutcome = programmeDeliveryOutcome(schedule, allOutcomes);
   const weekly = latestWeeklySummary(tracker);
@@ -442,7 +444,7 @@ export function buildExecutiveRoadmapModel(schedule: ProgrammeSchedule, tracker:
       dependencies: [...new Map([
         ...collectPredecessorDependencies(outcome, schedule, byUid, dateWindow, windowStart),
         ...(contextAssignments.get(outcome.uid) ?? []),
-      ].filter((item) => item.uid !== outcome.uid).map((item) => [item.uid, item])).values()]
+      ].filter((item) => item.uid !== outcome.uid && !removedUidSet.has(item.uid)).map((item) => [item.uid, item])).values()]
         .sort((a, b) => bySoonest(a.finishDate, b.finishDate)),
     })),
   };

@@ -267,9 +267,9 @@ export async function exportExecutiveRoadmapImage(element: HTMLElement, schedule
   }
 }
 
-export async function exportExecutiveRoadmapPosterPdf(schedule: ProgrammeSchedule, tracker: TrackerData | undefined, dateWindow: DateWindow, contextItemUids: string[] = []) {
+export async function exportExecutiveRoadmapPosterPdf(schedule: ProgrammeSchedule, tracker: TrackerData | undefined, dateWindow: DateWindow, contextItemUids: string[] = [], removedItemUids: string[] = []) {
   const { default: jsPDF } = await import("jspdf");
-  const model = buildExecutiveRoadmapModel(schedule, tracker, dateWindow, { contextItemUids });
+  const model = buildExecutiveRoadmapModel(schedule, tracker, dateWindow, { contextItemUids, removedItemUids });
   const contextUidSet = new Set(contextItemUids);
   const doc = new jsPDF({ orientation: "landscape", unit: "mm", format: "a3" });
   addPosterHeader(doc, schedule, model.reportDate, "Executive roadmap poster");
@@ -320,8 +320,8 @@ export async function exportExecutiveRoadmapPosterPdf(schedule: ProgrammeSchedul
   doc.save(`${fileSlug(schedule.title)}-executive-roadmap-poster.pdf`);
 }
 
-export function exportExecutiveRoadmapHtml(schedule: ProgrammeSchedule, tracker: TrackerData | undefined, dateWindow: DateWindow, contextItemUids: string[] = []) {
-  const model = buildExecutiveRoadmapModel(schedule, tracker, dateWindow, { contextItemUids });
+export function exportExecutiveRoadmapHtml(schedule: ProgrammeSchedule, tracker: TrackerData | undefined, dateWindow: DateWindow, contextItemUids: string[] = [], removedItemUids: string[] = []) {
+  const model = buildExecutiveRoadmapModel(schedule, tracker, dateWindow, { contextItemUids, removedItemUids });
   const contextUidSet = new Set(contextItemUids);
   const milestoneCards = model.outcomes.map((item) => {
     const tone = executiveTone(item);
