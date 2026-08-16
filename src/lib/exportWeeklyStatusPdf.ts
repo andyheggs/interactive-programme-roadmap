@@ -117,27 +117,6 @@ function latestWeeklySummary(tracker?: TrackerData) {
   return sortedWeeklySummaries(tracker)[0];
 }
 
-function ragScore(value?: string): number | undefined {
-  const text = normaliseText(value);
-  if (text.includes("red")) return 3;
-  if (text.includes("amber")) return 2;
-  if (text.includes("green")) return 1;
-  return undefined;
-}
-
-function weeklyMovement(tracker?: TrackerData): string | undefined {
-  const summaries = sortedWeeklySummaries(tracker);
-  const current = summaries[0];
-  if (!current) return undefined;
-  const explicit = meaningfulText(current.ragMovement);
-  if (explicit) return explicit;
-  const currentScore = ragScore(current.overallRag);
-  const previousScore = ragScore(summaries[1]?.overallRag);
-  if (!currentScore || !previousScore) return undefined;
-  if (currentScore === previousScore) return "Stable";
-  return currentScore > previousScore ? "Worsened" : "Improved";
-}
-
 function isRedOrAmber(value?: string): boolean {
   const label = normaliseText(value);
   return label.includes("red") || label.includes("amber") || label.includes("high");
@@ -170,6 +149,27 @@ function programmeMilestones(schedule: ProgrammeSchedule): ProgrammeItem[] {
   return schedule.items
     .filter((item) => item.isMilestone || item.roadmapMilestone)
     .sort((a, b) => itemImportance(b) - itemImportance(a) || bySoonest(a.finishDate, b.finishDate));
+}
+
+function executiveMilestoneItems(schedule: ProgrammeSchedule): ProgrammeItem[] {
+  const executive = schedule.items
+    .filter((item) => item.executiveMilestone || normaliseText(item.milestoneLevel) === "executive milestone")
+    .sort((a, b) => bySoonest(a.finishDate, b.finishDate));
+  if (executive.length) return executive;
+  return programmeMilestones(schedule).filter((item) => itemImportance(item) >= 4).slice(0, 5);
+}
+
+function programmeDeliveryOutcome(schedule: ProgrammeSchedule, outcomes: ProgrammeItem[]): ProgrammeItem | undefined {
+  const candidates = outcomes.length ? outcomes : executiveMilestoneItems(schedule);
+  return candidates.find((item) => /platform.*go live|go live/i.test(item.name))
+    ?? candidates.slice().sort((a, b) => bySoonest(b.finishDate, a.finishDate))[0]
+    ?? schedule.items.slice().sort((a, b) => bySoonest(b.finishDate, a.finishDate))[0];
+}
+
+function forecastToGoLiveLabel(schedule: ProgrammeSchedule): string {
+  const outcome = programmeDeliveryOutcome(schedule, executiveMilestoneItems(schedule));
+  if (outcome?.finishDate) return `${formatDate(outcome.finishDate)} - ${outcome.name}`;
+  return formatDate(schedule.finishDate);
 }
 
 function uniqueItems(items: ProgrammeItem[]): ProgrammeItem[] {
@@ -441,10 +441,11 @@ export async function exportWeeklyStatusPdf({ schedule, tracker, dateWindow, cur
   const decisionsNeeded = curateWeeklyItems(allDecisions.filter(isOutstandingDecision), allDecisions, "decisions", curation, (decision) => `decision-${decision.id}`, 5);
   const allChanges = (tracker?.changes ?? []).filter((change) => !isCompleteStatus(change.status)).sort(changeSort);
   const significantChanges = curateWeeklyItems(allChanges.filter(isSignificantChange), allChanges, "changes", curation, (change) => `change-${change.id}`, 5);
-  const movement = weeklyMovement(tracker) ?? "Not captured";
   const deliveryConfidence = meaningfulText(weekly?.goLiveConfidence) ?? "Not captured";
+  const forecastToGoLive = forecastToGoLiveLabel(schedule);
   const mainBlocker = meaningfulText(weekly?.mainBlocker) ?? risksIssues[0]?.title ?? "None flagged";
-  const nextKeyDate = upcomingMilestones[0] ? `${formatDate(upcomingMilestones[0].finishDate)} - ${upcomingMilestones[0].name}` : "None in window";
+  const nextMilestone = upcomingMilestoneSource[0];
+  const nextKeyDate = nextMilestone ? `${formatDate(nextMilestone.finishDate)} - ${nextMilestone.name}` : "None in window";
   const progressItems = [...splitDigest(weekly?.keyProgress, 4), ...splitDigest(weekly?.whatChanged, 2)].slice(0, 5);
   const priorityItems = splitDigest(weekly?.priorityActions, 5);
   const leadershipAsk = meaningfulText(weekly?.askSteerNeeded) ?? meaningfulText(weekly?.decisionsNeeded) ?? decisionsNeeded[0]?.title ?? "No current leadership ask flagged.";
@@ -483,8 +484,8 @@ export async function exportWeeklyStatusPdf({ schedule, tracker, dateWindow, cur
   y += 42;
 
   const cardWidth = (pageWidth - 30) / 2;
-  addBox(doc, 12, y, cardWidth, 22, "Movement", movement);
-  addBox(doc, 18 + cardWidth, y, cardWidth, 22, "Delivery confidence", deliveryConfidence);
+  addBox(doc, 12, y, cardWidth, 22, "Delivery confidence", deliveryConfidence);
+  addBox(doc, 18 + cardWidth, y, cardWidth, 22, "Forecast to go live", forecastToGoLive);
   y += 27;
   addBox(doc, 12, y, cardWidth, 28, "Main blocker", mainBlocker);
   addBox(doc, 18 + cardWidth, y, cardWidth, 28, "Next milestone", nextKeyDate);

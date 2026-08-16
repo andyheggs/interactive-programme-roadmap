@@ -580,27 +580,6 @@ function sortedWeeklySummaries(tracker?: TrackerData) {
     });
 }
 
-function ragScore(value?: string): number | undefined {
-  const text = normaliseText(value);
-  if (text.includes("red")) return 3;
-  if (text.includes("amber")) return 2;
-  if (text.includes("green")) return 1;
-  return undefined;
-}
-
-function weeklyMovement(tracker?: TrackerData): string | undefined {
-  const summaries = sortedWeeklySummaries(tracker);
-  const current = summaries[0];
-  if (!current) return undefined;
-  const explicit = meaningfulText(current.ragMovement);
-  if (explicit) return explicit;
-  const currentScore = ragScore(current.overallRag);
-  const previousScore = ragScore(summaries[1]?.overallRag);
-  if (!currentScore || !previousScore) return undefined;
-  if (currentScore === previousScore) return "Stable";
-  return currentScore > previousScore ? "Worsened" : "Improved";
-}
-
 function isOutstandingDecision(decision: TrackerDecision): boolean {
   const status = normaliseText(decision.status);
   if (["approved", "agreed", "decided", "closed", "complete", "completed", "done", "superseded", "cancelled", "not required"].includes(status)) {
@@ -873,6 +852,12 @@ function programmeDeliveryOutcome(schedule: ProgrammeSchedule, outcomes: Program
   return candidates.find((item) => /platform.*go live|go live/i.test(item.name))
     ?? candidates.slice().sort((a, b) => bySoonest(b.finishDate, a.finishDate))[0]
     ?? schedule.items.slice().sort((a, b) => bySoonest(b.finishDate, a.finishDate))[0];
+}
+
+function forecastToGoLiveLabel(schedule: ProgrammeSchedule): string {
+  const outcome = programmeDeliveryOutcome(schedule, executiveMilestoneItems(schedule));
+  if (outcome?.finishDate) return `${formatDate(outcome.finishDate)} - ${outcome.name}`;
+  return formatDate(schedule.finishDate);
 }
 
 function significantDependency(item: ProgrammeItem): boolean {
@@ -1964,9 +1949,10 @@ function WeeklyExecutiveStatusView({
   const [dragItem, setDragItem] = useState<WeeklyDragItem | undefined>();
   const ragTone = toneClass(weekly?.overallRag);
   const displayTitle = weeklyProgrammeTitle(schedule.title);
-  const movement = weeklyMovement(tracker);
   const deliveryConfidence = meaningfulText(weekly?.goLiveConfidence);
+  const forecastToGoLive = forecastToGoLiveLabel(schedule);
   const mainBlocker = meaningfulText(weekly?.mainBlocker) ?? risksIssues[0]?.title;
+  const nextMilestone = upcomingMilestoneSource[0];
   const progressItems = [...splitDigest(weekly?.keyProgress, 4), ...splitDigest(weekly?.whatChanged, 2)].slice(0, 5);
   const priorityItems = splitDigest(weekly?.priorityActions, 5);
   const leadershipAsk = meaningfulText(weekly?.askSteerNeeded) ?? meaningfulText(weekly?.decisionsNeeded) ?? decisionsNeeded[0]?.title;
@@ -2074,12 +2060,12 @@ function WeeklyExecutiveStatusView({
 
         <section className="weekly-kpis">
           <article>
-            <span>Movement</span>
-            <strong>{movement ?? "Not captured"}</strong>
-          </article>
-          <article>
             <span>Delivery confidence</span>
             <strong>{deliveryConfidence ?? "Not captured"}</strong>
+          </article>
+          <article>
+            <span>Forecast to go live</span>
+            <strong>{forecastToGoLive}</strong>
           </article>
           <article>
             <span>Main blocker</span>
@@ -2087,7 +2073,7 @@ function WeeklyExecutiveStatusView({
           </article>
           <article>
             <span>Next milestone</span>
-            <strong>{upcomingMilestones[0] ? `${formatDate(upcomingMilestones[0].finishDate)} - ${upcomingMilestones[0].name}` : "None in window"}</strong>
+            <strong>{nextMilestone ? `${formatDate(nextMilestone.finishDate)} - ${nextMilestone.name}` : "None in window"}</strong>
           </article>
         </section>
 
@@ -2119,6 +2105,7 @@ function WeeklyExecutiveStatusView({
                     <span>{formatDate(item.finishDate)}</span>
                     <strong>{item.name}</strong>
                     <em>{item.stream ?? item.milestoneLevel ?? "Milestone"}</em>
+                    {isDeliveredItem(item) ? <mark>Completed</mark> : null}
                   </div>
                   {renderControls("milestones", item.uid, visibleIds)}
                 </div>

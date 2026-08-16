@@ -1942,6 +1942,11 @@ body.executive-export-light .executive-roadmap {
   padding: 10px 0;
   border-bottom: 1px solid var(--border-soft);
 }
+.weekly-row > div:first-child {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
 .weekly-row.curated {
   grid-template-columns: minmax(0, 1fr) auto;
   align-items: start;
@@ -1966,6 +1971,17 @@ body.executive-export-light .executive-roadmap {
   color: var(--muted);
   font-size: 0.8rem;
   font-style: normal;
+  line-height: 1.35;
+}
+.weekly-row mark {
+  width: max-content;
+  padding: 3px 8px;
+  border-radius: 999px;
+  color: #2e7d55;
+  background: rgba(46, 125, 85, 0.14);
+  font-size: 0.72rem;
+  font-weight: 900;
+  text-transform: uppercase;
 }
 .weekly-row-controls {
   display: inline-flex;
