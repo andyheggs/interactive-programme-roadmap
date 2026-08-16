@@ -1958,7 +1958,8 @@ function WeeklyExecutiveStatusView({
   const moreIssues = remainingWeeklyItems(allRisksIssues.filter((item) => item.kind === "Issue"), risksIssues, (item) => item.id);
   const moreDecisions = remainingWeeklyItems(allDecisions, decisionsNeeded, (decision) => `decision-${decision.id}`);
   const moreChanges = remainingWeeklyItems(allChanges, significantChanges, (change) => `change-${change.id}`);
-  const [expandedTools, setExpandedTools] = useState<Set<string>>(() => new Set());
+  const [expandedTools, setExpandedTools] = useState<string[]>([]);
+  const [showStatusSummaryEditor, setShowStatusSummaryEditor] = useState(true);
   const [dragItem, setDragItem] = useState<WeeklyDragItem | undefined>();
   const ragTone = toneClass(weekly?.overallRag);
   const displayTitle = weeklyProgrammeTitle(schedule.title);
@@ -2014,12 +2015,10 @@ function WeeklyExecutiveStatusView({
     next.splice(targetIndex, 0, sourceId);
     reorderWeeklySection(section, next);
   };
-  const toggleTool = (tool: string) => setExpandedTools((current) => {
-    const next = new Set(current);
-    if (next.has(tool)) next.delete(tool);
-    else next.add(tool);
-    return next;
-  });
+  const isToolExpanded = (tool: string) => expandedTools.includes(tool);
+  const toggleTool = (tool: string) => setExpandedTools((current) => (
+    current.includes(tool) ? current.filter((item) => item !== tool) : [...current, tool]
+  ));
   const updateStatusSummary = (value: string | undefined) => {
     onUpdateCuration((current) => ({
       ...current,
@@ -2084,6 +2083,7 @@ function WeeklyExecutiveStatusView({
           </div>
         </header>
 
+        {showStatusSummaryEditor ? (
         <section className="weekly-summary-editor">
           <div>
             <span>Status summary</span>
@@ -2095,12 +2095,18 @@ function WeeklyExecutiveStatusView({
             rows={3}
             aria-label="Edit executive status summary"
           />
-          {curation.statusSummaryOverride !== undefined ? (
-            <button type="button" className="download-action secondary" onClick={() => updateStatusSummary(undefined)}>
-              Use tracker summary
+          <div className="weekly-summary-actions">
+            {curation.statusSummaryOverride !== undefined ? (
+              <button type="button" className="download-action secondary" onClick={() => updateStatusSummary(undefined)}>
+                Use tracker summary
+              </button>
+            ) : null}
+            <button type="button" className="download-action secondary" onClick={() => setShowStatusSummaryEditor(false)}>
+              Hide editor
             </button>
-          ) : null}
+          </div>
         </section>
+        ) : null}
 
         <section className="weekly-kpis">
           <article>
@@ -2225,49 +2231,50 @@ function WeeklyExecutiveStatusView({
           <button type="button" className="download-action secondary" onClick={() => onUpdateCuration(() => ({}))}>Reset weekly selection</button>
         </div>
         <div className="weekly-tool-buttons">
-          <button type="button" onClick={() => toggleTool("upcoming")}>More upcoming milestones ({moreUpcomingMilestones.length})</button>
-          <button type="button" onClick={() => toggleTool("completed")}>Completed milestones ({moreCompletedMilestones.length})</button>
-          <button type="button" onClick={() => toggleTool("risks")}>More risks ({moreRisks.length})</button>
-          <button type="button" onClick={() => toggleTool("issues")}>More issues ({moreIssues.length})</button>
-          <button type="button" onClick={() => toggleTool("decisions")}>More decisions ({moreDecisions.length})</button>
-          <button type="button" onClick={() => toggleTool("changes")}>More changes ({moreChanges.length})</button>
+          {!showStatusSummaryEditor ? <button type="button" onClick={() => setShowStatusSummaryEditor(true)}>Show status editor</button> : null}
+          <button type="button" className={isToolExpanded("upcoming") ? "active" : ""} aria-expanded={isToolExpanded("upcoming")} onClick={() => toggleTool("upcoming")}>More upcoming milestones ({moreUpcomingMilestones.length})</button>
+          <button type="button" className={isToolExpanded("completed") ? "active" : ""} aria-expanded={isToolExpanded("completed")} onClick={() => toggleTool("completed")}>Completed milestones ({moreCompletedMilestones.length})</button>
+          <button type="button" className={isToolExpanded("risks") ? "active" : ""} aria-expanded={isToolExpanded("risks")} onClick={() => toggleTool("risks")}>More risks ({moreRisks.length})</button>
+          <button type="button" className={isToolExpanded("issues") ? "active" : ""} aria-expanded={isToolExpanded("issues")} onClick={() => toggleTool("issues")}>More issues ({moreIssues.length})</button>
+          <button type="button" className={isToolExpanded("decisions") ? "active" : ""} aria-expanded={isToolExpanded("decisions")} onClick={() => toggleTool("decisions")}>More decisions ({moreDecisions.length})</button>
+          <button type="button" className={isToolExpanded("changes") ? "active" : ""} aria-expanded={isToolExpanded("changes")} onClick={() => toggleTool("changes")}>More changes ({moreChanges.length})</button>
         </div>
-        {expandedTools.has("upcoming") ? (
+        {isToolExpanded("upcoming") ? (
           <WeeklySourceList
             title="More upcoming milestones"
             items={moreUpcomingMilestones.map((item) => ({ id: item.uid, title: item.name, eyebrow: formatDate(item.finishDate), meta: item.stream ?? item.milestoneLevel ?? "Milestone" }))}
             onAdd={(id) => addToWeeklySection("milestones", id)}
           />
         ) : null}
-        {expandedTools.has("completed") ? (
+        {isToolExpanded("completed") ? (
           <WeeklySourceList
             title="Completed milestones"
             items={moreCompletedMilestones.map((item) => ({ id: item.uid, title: item.name, eyebrow: formatDate(item.finishDate), meta: item.stream ?? item.milestoneLevel ?? "Milestone" }))}
             onAdd={(id) => addToWeeklySection("milestones", id)}
           />
         ) : null}
-        {expandedTools.has("risks") ? (
+        {isToolExpanded("risks") ? (
           <WeeklySourceList
             title="More risks"
             items={moreRisks.map((item) => ({ id: item.id, title: item.title, eyebrow: item.status ?? "Risk", meta: item.stream ?? item.meta ?? "" }))}
             onAdd={(id) => addToWeeklySection("risksIssues", id)}
           />
         ) : null}
-        {expandedTools.has("issues") ? (
+        {isToolExpanded("issues") ? (
           <WeeklySourceList
             title="More issues"
             items={moreIssues.map((item) => ({ id: item.id, title: item.title, eyebrow: item.status ?? "Issue", meta: item.stream ?? item.meta ?? "" }))}
             onAdd={(id) => addToWeeklySection("risksIssues", id)}
           />
         ) : null}
-        {expandedTools.has("decisions") ? (
+        {isToolExpanded("decisions") ? (
           <WeeklySourceList
             title="More decisions"
             items={moreDecisions.map((decision) => ({ id: `decision-${decision.id}`, title: decision.title, eyebrow: formatDateOrText(decision.decisionRequiredBy ?? decision.decisionDate, "Decision date tbc"), meta: decision.decisionMaker ?? decision.owner ?? decision.status ?? "" }))}
             onAdd={(id) => addToWeeklySection("decisions", id)}
           />
         ) : null}
-        {expandedTools.has("changes") ? (
+        {isToolExpanded("changes") ? (
           <WeeklySourceList
             title="More changes"
             items={moreChanges.map((change) => ({ id: `change-${change.id}`, title: change.title, eyebrow: formatDate(change.lastDiscussedDate ?? change.dateRaised), meta: meaningfulText(change.decisionRequired) ?? meaningfulText(change.impactOnTime) ?? meaningfulText(change.impactOnScope) ?? change.status ?? "" }))}

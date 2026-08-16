@@ -1919,6 +1919,10 @@ body.executive-export-light .executive-roadmap {
   outline: 2px solid rgba(61, 120, 169, 0.35);
   border-color: var(--active);
 }
+.weekly-summary-actions {
+  display: grid;
+  gap: 8px;
+}
 .weekly-kpis article,
 .weekly-panel,
 .weekly-card {
@@ -2096,9 +2100,13 @@ body.executive-export-light .executive-roadmap {
   cursor: pointer;
 }
 .weekly-tool-buttons button:hover,
+.weekly-tool-buttons button.active,
 .weekly-source-row button:hover {
   border-color: var(--active);
   color: var(--active);
+}
+.weekly-tool-buttons button.active {
+  background: rgba(61, 120, 169, 0.14);
 }
 .weekly-source-list {
   display: grid;
