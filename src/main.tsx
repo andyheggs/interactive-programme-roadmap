@@ -646,6 +646,55 @@ function statusLabel(item: TeamWorkItem): string {
   return item.status ?? "Not set";
 }
 
+function ownerNames(owner?: string): string[] {
+  const names = (owner ?? "")
+    .split(/[\/,;&]+/)
+    .map((value) => value.trim())
+    .filter(Boolean);
+  return names.length ? uniqueSorted(names) : ["Unassigned"];
+}
+
+function isAttentionTeamItem(item: TeamWorkItem): boolean {
+  const group = actionStatusGroup(item);
+  return group === "due-soon" || group === "overdue" || group === "blocked";
+}
+
+function teamActionItemSort(a: TeamWorkItem, b: TeamWorkItem): number {
+  const attentionDelta = Number(isAttentionTeamItem(b)) - Number(isAttentionTeamItem(a));
+  if (attentionDelta) return attentionDelta;
+  return bySoonest(a.dueDate, b.dueDate) || a.title.localeCompare(b.title);
+}
+
+type TeamActionPack = {
+  ownerName: string;
+  items: TeamWorkItem[];
+  attentionItems: TeamWorkItem[];
+  upcomingItems: TeamWorkItem[];
+};
+
+function buildTeamActionPacks(items: TeamWorkItem[]): TeamActionPack[] {
+  const activeItems = items.filter((item) => actionStatusGroup(item) !== "completed");
+  const grouped = new Map<string, TeamWorkItem[]>();
+  activeItems.forEach((item) => {
+    ownerNames(item.owner).forEach((name) => {
+      const current = grouped.get(name) ?? [];
+      current.push(item);
+      grouped.set(name, current);
+    });
+  });
+  return Array.from(grouped.entries())
+    .map(([ownerName, ownerItems]) => {
+      const sortedItems = ownerItems.sort(teamActionItemSort);
+      return {
+        ownerName,
+        items: sortedItems,
+        attentionItems: sortedItems.filter(isAttentionTeamItem),
+        upcomingItems: sortedItems.filter((item) => !isAttentionTeamItem(item)),
+      };
+    })
+    .sort((a, b) => b.attentionItems.length - a.attentionItems.length || bySoonest(a.items[0]?.dueDate, b.items[0]?.dueDate) || a.ownerName.localeCompare(b.ownerName));
+}
+
 function teamStatusMatches(group: ReturnType<typeof actionStatusGroup>, filters: TeamStatusFilter[]): boolean {
   if (!filters.length) return true;
   return filters.includes(group);
@@ -2740,7 +2789,7 @@ function TeamActionTrackerView({
   schedule: ProgrammeSchedule;
   tracker?: TrackerData;
   dateWindow: DateWindow;
-  onExportPdf: (items: TeamWorkItem[]) => void;
+  onExportPdf: (items: TeamWorkItem[], options?: { ownerName?: string; ownerPacks?: TeamActionPack[] }) => void;
 }) {
   const [statusFilters, setStatusFilters] = useState<TeamStatusFilter[]>(["open", "due-soon", "overdue", "blocked"]);
   const [actionScope, setActionScope] = useState<TeamActionScope>("standard");
@@ -2752,7 +2801,8 @@ function TeamActionTrackerView({
   const meetingActions = allItems.filter((item) => item.source === "Meeting action");
   const lastMeetingDate = latestMeetingActionDate(allItems);
   const lastMeetingActions = lastMeetingDate ? meetingActions.filter((item) => sameCalendarDate(item.meetingDate ?? item.loggedDate, lastMeetingDate)) : [];
-  const owners = uniqueSorted(allItems.flatMap((item) => item.owner?.split("/") ?? []).map((value) => value.trim()).filter(Boolean));
+  const actionPacks = buildTeamActionPacks(allItems);
+  const owners = uniqueSorted(allItems.flatMap((item) => ownerNames(item.owner)).filter((value) => value !== "Unassigned"));
   const streams = uniqueSorted(allItems.map((item) => item.stream));
   const sources = uniqueSorted(allItems.map((item) => item.source));
   const filtered = allItems
@@ -2886,6 +2936,71 @@ function TeamActionTrackerView({
             );
           })}
           {!filtered.length ? <article className="empty-panel"><h2>No actions found</h2><p>Adjust the status, owner, source, workstream or date window filters.</p></article> : null}
+        </section>
+
+        <section className="team-action-packs">
+          <div className="team-action-packs-header">
+            <div>
+              <span className="snapshot-eyebrow">Team Action Tracker</span>
+              <h2>Person action packs</h2>
+              <p>Automatically groups open meeting actions and assigned Project plan tasks by person, with due soon / attention items first and upcoming work beneath.</p>
+            </div>
+            <button className="download-action" type="button" onClick={() => onExportPdf(actionPacks.flatMap((pack) => pack.items), { ownerPacks: actionPacks })} disabled={!actionPacks.length}>
+              <Download size={15} />
+              Download everyone A4 pack
+            </button>
+          </div>
+          <div className="team-action-pack-grid">
+            {actionPacks.map((pack) => (
+              <article className="team-action-pack-card" key={pack.ownerName}>
+                <header>
+                  <div>
+                    <h3>{pack.ownerName}</h3>
+                    <p>{pack.items.length} active assigned {pack.items.length === 1 ? "item" : "items"}</p>
+                  </div>
+                  <button className="download-action secondary" type="button" onClick={() => onExportPdf(pack.items, { ownerName: pack.ownerName })}>
+                    <Download size={15} />
+                    A4 PDF
+                  </button>
+                </header>
+                <div className="team-pack-counts">
+                  <span><strong>{pack.attentionItems.length}</strong> Due soon / attention</span>
+                  <span><strong>{pack.upcomingItems.length}</strong> Upcoming</span>
+                </div>
+                <table className="team-pack-table">
+                  <thead>
+                    <tr>
+                      <th>When</th>
+                      <th>Action</th>
+                      <th>Source</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr className="team-pack-section-row"><td colSpan={3}>Due soon / attention</td></tr>
+                    {(pack.attentionItems.length ? pack.attentionItems : []).slice(0, 5).map((item) => (
+                      <tr key={`attention-${pack.ownerName}-${item.id}`}>
+                        <td>{formatDate(item.dueDate)}</td>
+                        <td><strong>{item.title}</strong><span>{statusLabel(item)}</span></td>
+                        <td>{item.source}</td>
+                      </tr>
+                    ))}
+                    {!pack.attentionItems.length ? <tr><td colSpan={3}>Nothing due soon or blocked.</td></tr> : null}
+                    <tr className="team-pack-section-row"><td colSpan={3}>Upcoming</td></tr>
+                    {(pack.upcomingItems.length ? pack.upcomingItems : []).slice(0, 5).map((item) => (
+                      <tr key={`upcoming-${pack.ownerName}-${item.id}`}>
+                        <td>{formatDate(item.dueDate)}</td>
+                        <td><strong>{item.title}</strong><span>{item.stream ?? "No workstream"}</span></td>
+                        <td>{item.source}</td>
+                      </tr>
+                    ))}
+                    {!pack.upcomingItems.length ? <tr><td colSpan={3}>No later upcoming work found.</td></tr> : null}
+                  </tbody>
+                </table>
+                {pack.items.length > 10 ? <p className="team-pack-note">Preview shows the first 10 items; the PDF includes all active assigned items for {pack.ownerName}.</p> : null}
+              </article>
+            ))}
+            {!actionPacks.length ? <article className="empty-panel"><h2>No active assigned actions</h2><p>Import a tracker or Project plan with open assigned actions to create person packs.</p></article> : null}
+          </div>
         </section>
       </div>
       <div className="snapshot-actions">
@@ -3434,15 +3549,21 @@ function App() {
     }
   }
 
-  async function exportTeamActionsPdf(items: TeamWorkItem[]) {
+  async function exportTeamActionsPdf(items: TeamWorkItem[], options?: { ownerName?: string; ownerPacks?: TeamActionPack[] }) {
     setError(undefined);
+    const toPdfItem = (item: TeamWorkItem) => ({
+      ...item,
+      displayStatus: statusLabel(item),
+    });
     try {
       await exportTeamActionsA4Pdf({
         schedule,
         dateWindow,
-        items: items.map((item) => ({
-          ...item,
-          displayStatus: statusLabel(item),
+        items: items.map(toPdfItem),
+        ownerName: options?.ownerName,
+        ownerPacks: options?.ownerPacks?.map((pack) => ({
+          ownerName: pack.ownerName,
+          items: pack.items.map(toPdfItem),
         })),
       });
     } catch (err) {

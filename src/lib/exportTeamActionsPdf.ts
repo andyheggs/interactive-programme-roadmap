@@ -29,6 +29,8 @@ type ExportTeamActionsPdfOptions = {
   schedule: ProgrammeSchedule;
   items: TeamActionPdfItem[];
   dateWindow: DateWindow;
+  ownerName?: string;
+  ownerPacks?: Array<{ ownerName: string; items: TeamActionPdfItem[] }>;
 };
 
 type Rgb = [number, number, number];
@@ -64,14 +66,28 @@ function isBlocked(value?: string): boolean {
   return text.includes("block") || text.includes("hold");
 }
 
-function addHeader(doc: JsPDF, schedule: ProgrammeSchedule, dateWindow: DateWindow) {
+function parseDate(value?: string): Date | undefined {
+  if (!value) return undefined;
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return undefined;
+  date.setHours(0, 0, 0, 0);
+  return date;
+}
+
+function addDays(date: Date, days: number): Date {
+  const next = new Date(date);
+  next.setDate(next.getDate() + days);
+  return next;
+}
+
+function addHeader(doc: JsPDF, schedule: ProgrammeSchedule, dateWindow: DateWindow, subtitle = "Team Actions") {
   const pageWidth = doc.internal.pageSize.getWidth();
   doc.setFillColor(...colours.deep);
   doc.rect(0, 0, pageWidth, 28, "F");
   doc.setTextColor(255, 255, 255);
   doc.setFont("helvetica", "bold");
   doc.setFontSize(15);
-  doc.text(`${schedule.title} - Team Actions`, 12, 12);
+  doc.text(`${schedule.title} - ${subtitle}`, 12, 12);
   doc.setFont("helvetica", "normal");
   doc.setFontSize(8);
   doc.text(`Generated ${formatDate(new Date().toISOString())}`, pageWidth - 12, 10, { align: "right" });
@@ -99,6 +115,23 @@ function itemTone(item: TeamActionPdfItem): "green" | "amber" | "red" | "blue" {
   return "blue";
 }
 
+function isAttentionItem(item: TeamActionPdfItem): boolean {
+  const status = item.displayStatus ?? item.status;
+  const due = parseDate(item.dueDate);
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  return !isComplete(status) && (isBlocked(status) || normaliseText(status).includes("overdue") || Boolean(due && due <= addDays(today, 14)));
+}
+
+function itemSort(a: TeamActionPdfItem, b: TeamActionPdfItem): number {
+  const attentionDelta = Number(isAttentionItem(b)) - Number(isAttentionItem(a));
+  if (attentionDelta) return attentionDelta;
+  const dueA = parseDate(a.dueDate)?.getTime() ?? Number.POSITIVE_INFINITY;
+  const dueB = parseDate(b.dueDate)?.getTime() ?? Number.POSITIVE_INFINITY;
+  if (dueA !== dueB) return dueA - dueB;
+  return a.title.localeCompare(b.title);
+}
+
 function summaryRows(items: TeamActionPdfItem[]): TableRow[] {
   const counts = {
     open: items.filter((item) => !isComplete(item.displayStatus ?? item.status)).length,
@@ -115,8 +148,106 @@ function summaryRows(items: TeamActionPdfItem[]): TableRow[] {
   ];
 }
 
-export async function exportTeamActionsPdf({ schedule, items, dateWindow }: ExportTeamActionsPdfOptions) {
+function packRows(items: TeamActionPdfItem[]): TableRow[] {
+  return items.sort(itemSort).map((item) => [
+    item.source,
+    item.stream ?? "Not set",
+    formatDate(item.loggedDate ?? item.meetingDate),
+    formatDate(item.dueDate),
+    item.displayStatus ?? item.status ?? "Not set",
+    item.title,
+    item.latestUpdate || item.description || item.links || "",
+  ]);
+}
+
+function addPersonPack(
+  doc: JsPDF,
+  table: AutoTable,
+  schedule: ProgrammeSchedule,
+  dateWindow: DateWindow,
+  ownerName: string,
+  items: TeamActionPdfItem[],
+  startY = 36,
+) {
+  addHeader(doc, schedule, dateWindow, `${ownerName} Actions`);
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(13);
+  doc.setTextColor(...colours.ink);
+  doc.text(ownerName, 12, startY);
+  const activeItems = items.filter((item) => !isComplete(item.displayStatus ?? item.status));
+  const dueSoon = activeItems.filter(isAttentionItem).sort(itemSort);
+  const upcoming = activeItems.filter((item) => !isAttentionItem(item)).sort(itemSort);
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(8);
+  doc.setTextColor(...colours.muted);
+  doc.text(`${dueSoon.length} due soon / attention · ${upcoming.length} upcoming · ${items.length} total assigned rows`, 12, startY + 6);
+
+  table(doc, {
+    startY: startY + 12,
+    margin: { left: 12, right: 12, bottom: 14 },
+    head: [["Source", "Workstream", "Logged", "Due", "Status", "Action / task / milestone", "Notes"]],
+    body: dueSoon.length ? packRows(dueSoon) : [["No due soon items", "", "", "", "", "Nothing needs immediate attention.", ""]],
+    theme: "grid",
+    showHead: "everyPage",
+    styles: { font: "helvetica", fontSize: 7.4, cellPadding: 2.2, textColor: colours.ink, lineColor: colours.line, lineWidth: 0.1, overflow: "linebreak", valign: "top" },
+    headStyles: { fillColor: colours.amber, textColor: [28, 38, 33], fontStyle: "bold", fontSize: 7.4 },
+    alternateRowStyles: { fillColor: colours.pale },
+    columnStyles: {
+      0: { cellWidth: 21 },
+      1: { cellWidth: 26 },
+      2: { cellWidth: 18, fontStyle: "bold" },
+      3: { cellWidth: 18, fontStyle: "bold" },
+      4: { cellWidth: 20, fontStyle: "bold" },
+      5: { cellWidth: 51, fontStyle: "bold" },
+      6: { cellWidth: 32 },
+    },
+    didParseCell: (data) => {
+      if (data.section !== "body" || data.column.index !== 4) return;
+      const item = dueSoon[data.row.index];
+      const tone = item ? itemTone(item) : "blue";
+      data.cell.styles.textColor = colours[tone];
+    },
+    didDrawPage: () => addHeader(doc, schedule, dateWindow, `${ownerName} Actions`),
+  });
+
+  table(doc, {
+    startY: ((doc as JsPDF & { lastAutoTable?: { finalY?: number } }).lastAutoTable?.finalY ?? startY + 28) + 8,
+    margin: { left: 12, right: 12, bottom: 14 },
+    head: [["Source", "Workstream", "Logged", "Due", "Status", "Action / task / milestone", "Notes"]],
+    body: upcoming.length ? packRows(upcoming) : [["No upcoming items", "", "", "", "", "No later assigned actions found.", ""]],
+    theme: "grid",
+    showHead: "everyPage",
+    styles: { font: "helvetica", fontSize: 7.4, cellPadding: 2.2, textColor: colours.ink, lineColor: colours.line, lineWidth: 0.1, overflow: "linebreak", valign: "top" },
+    headStyles: { fillColor: colours.deep, textColor: [255, 255, 255], fontStyle: "bold", fontSize: 7.4 },
+    alternateRowStyles: { fillColor: colours.pale },
+    columnStyles: {
+      0: { cellWidth: 21 },
+      1: { cellWidth: 26 },
+      2: { cellWidth: 18, fontStyle: "bold" },
+      3: { cellWidth: 18, fontStyle: "bold" },
+      4: { cellWidth: 20, fontStyle: "bold" },
+      5: { cellWidth: 51, fontStyle: "bold" },
+      6: { cellWidth: 32 },
+    },
+    didDrawPage: () => addHeader(doc, schedule, dateWindow, `${ownerName} Actions`),
+  });
+}
+
+export async function exportTeamActionsPdf({ schedule, items, dateWindow, ownerName, ownerPacks }: ExportTeamActionsPdfOptions) {
   const [{ default: jsPDF }, { default: autoTable }] = await Promise.all([import("jspdf"), import("jspdf-autotable")]);
+  if (ownerPacks?.length || ownerName) {
+    const doc = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
+    const table = autoTable as AutoTable;
+    const packs = ownerPacks?.length ? ownerPacks : [{ ownerName: ownerName ?? "Team", items }];
+    packs.forEach((pack, index) => {
+      if (index > 0) doc.addPage();
+      addPersonPack(doc, table, schedule, dateWindow, pack.ownerName, pack.items);
+    });
+    addFooter(doc);
+    doc.save(`${fileSlug(schedule.title)}-${ownerPacks?.length ? "team-action-packs" : fileSlug(ownerName ?? "team") + "-actions"}.pdf`);
+    return;
+  }
+
   const doc = new jsPDF({ orientation: "landscape", unit: "mm", format: "a4" });
   addHeader(doc, schedule, dateWindow);
 
