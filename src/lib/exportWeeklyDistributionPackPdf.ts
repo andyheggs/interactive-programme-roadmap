@@ -30,8 +30,9 @@ type ExportWeeklyDistributionPackOptions = {
 type Rgb = [number, number, number];
 type AutoTable = typeof import("jspdf-autotable").default;
 type TableRow = Array<string | number>;
+type ExecutiveTone = ReturnType<typeof executiveToneAssessment>["tone"];
 
-const colours: Record<"ink" | "muted" | "deep" | "line" | "pale" | "green" | "amber" | "red" | "blue", Rgb> = {
+const colours: Record<"ink" | "muted" | "deep" | "line" | "pale" | "green" | "amber" | "red" | "blue" | "grey" | "white", Rgb> = {
   ink: [28, 38, 33],
   muted: [91, 105, 96],
   deep: [33, 76, 67],
@@ -41,6 +42,24 @@ const colours: Record<"ink" | "muted" | "deep" | "line" | "pale" | "green" | "am
   amber: [232, 117, 26],
   red: [179, 58, 50],
   blue: [61, 120, 169],
+  grey: [126, 140, 132],
+  white: [255, 255, 255],
+};
+
+const executiveToneColours: Record<ExecutiveTone, Rgb> = {
+  green: colours.green,
+  blue: colours.blue,
+  amber: colours.amber,
+  red: colours.red,
+  grey: colours.grey,
+};
+
+const executiveToneFills: Record<ExecutiveTone, Rgb> = {
+  green: [231, 245, 237],
+  blue: [232, 242, 251],
+  amber: [255, 240, 210],
+  red: [255, 231, 229],
+  grey: [237, 241, 239],
 };
 
 function fileSlug(value: string): string {
@@ -230,6 +249,154 @@ function addTextBox(doc: JsPDF, title: string, body: string | string[], x: numbe
   return h;
 }
 
+function setRgbFill(doc: JsPDF, colour: Rgb) {
+  doc.setFillColor(colour[0], colour[1], colour[2]);
+}
+
+function setRgbDraw(doc: JsPDF, colour: Rgb) {
+  doc.setDrawColor(colour[0], colour[1], colour[2]);
+}
+
+function setRgbText(doc: JsPDF, colour: Rgb) {
+  doc.setTextColor(colour[0], colour[1], colour[2]);
+}
+
+function drawRoadmapLegend(doc: JsPDF, x: number, y: number, w: number): number {
+  const items: Array<{ tone: ExecutiveTone; label: string }> = [
+    { tone: "green", label: "Complete / confirmed" },
+    { tone: "blue", label: "Planned / dated" },
+    { tone: "amber", label: "Date assumption / Amber" },
+    { tone: "red", label: "Blocked / Red" },
+    { tone: "grey", label: "Not assessed" },
+  ];
+  setRgbDraw(doc, colours.line);
+  setRgbFill(doc, colours.pale);
+  doc.roundedRect(x, y, w, 17, 2.5, 2.5, "FD");
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(7);
+  setRgbText(doc, colours.muted);
+  doc.text("Colour status", x + 4, y + 6.5);
+  let cursor = x + 34;
+  items.forEach((item) => {
+    setRgbFill(doc, executiveToneColours[item.tone]);
+    doc.circle(cursor, y + 6, 2.4, "F");
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(6.9);
+    setRgbText(doc, colours.ink);
+    doc.text(item.label, cursor + 5, y + 8);
+    cursor += doc.getTextWidth(item.label) + 16;
+  });
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(6.6);
+  setRgbText(doc, colours.muted);
+  doc.text("Each lane shows key linked predecessor milestones/enablers flowing into the executive milestone card.", x + 4, y + 14);
+  return y + 24;
+}
+
+function drawOutcomeCard(doc: JsPDF, item: ProgrammeItem, x: number, y: number, w: number, h: number) {
+  const assessment = executiveToneAssessment(item);
+  const tone = assessment.tone;
+  setRgbDraw(doc, executiveToneColours[tone]);
+  setRgbFill(doc, executiveToneFills[tone]);
+  doc.roundedRect(x, y, w, h, 2.5, 2.5, "FD");
+  setRgbFill(doc, executiveToneColours[tone]);
+  doc.rect(x, y, w, 4, "F");
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(7.2);
+  setRgbText(doc, colours.muted);
+  doc.text(executiveToneLabel(item), x + 4, y + 11);
+  doc.setFontSize(8.2);
+  setRgbText(doc, colours.ink);
+  doc.text(doc.splitTextToSize(item.name, w - 8).slice(0, 3), x + 4, y + 20);
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(8);
+  setRgbText(doc, colours.muted);
+  doc.text(formatDate(item.finishDate), x + 4, y + h - 7);
+}
+
+function drawRoadmapLane(doc: JsPDF, path: { outcome: ProgrammeItem; dependencies: ProgrammeItem[] }, x: number, y: number, w: number, h: number) {
+  const labelW = 48;
+  const outcomeW = 58;
+  const gap = 6;
+  const pathX = x + labelW + gap;
+  const outcomeX = x + w - outcomeW;
+  const pathW = outcomeX - pathX - gap;
+  const centreY = y + h / 2 - 1;
+  const dependencies = path.dependencies.slice(0, 6);
+
+  setRgbDraw(doc, colours.line);
+  setRgbFill(doc, colours.white);
+  doc.roundedRect(x, y, w, h, 2.5, 2.5, "FD");
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(8.4);
+  setRgbText(doc, colours.ink);
+  doc.text(doc.splitTextToSize(path.outcome.name, labelW - 6).slice(0, 3), x + 4, y + 10);
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(6.5);
+  setRgbText(doc, colours.muted);
+  doc.text("Executive milestone", x + 4, y + h - 6);
+
+  setRgbDraw(doc, colours.line);
+  doc.setLineWidth(0.55);
+  doc.line(pathX, centreY, outcomeX - 5, centreY);
+  doc.line(outcomeX - 5, centreY, outcomeX - 9, centreY - 3);
+  doc.line(outcomeX - 5, centreY, outcomeX - 9, centreY + 3);
+
+  if (!dependencies.length) {
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(7.2);
+    setRgbText(doc, colours.muted);
+    doc.text("No linked predecessor milestones shown.", pathX + 4, centreY - 4);
+  } else {
+    const step = dependencies.length > 1 ? pathW / (dependencies.length - 1) : 0;
+    const textW = Math.min(34, Math.max(24, pathW / Math.max(1, dependencies.length) - 3));
+    dependencies.forEach((item, index) => {
+      const dotX = dependencies.length === 1 ? pathX + pathW / 2 : pathX + index * step;
+      const assessment = executiveToneAssessment(item);
+      const tone = assessment.tone;
+      setRgbFill(doc, executiveToneColours[tone]);
+      doc.circle(dotX, centreY, 2.8, "F");
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(6.4);
+      setRgbText(doc, colours.muted);
+      doc.text(formatDate(item.finishDate).replace(" 20", " "), dotX, y + 10, { align: "center" });
+      doc.setFontSize(6.7);
+      setRgbText(doc, colours.ink);
+      doc.text(doc.splitTextToSize(item.name, textW).slice(0, 3), dotX, centreY + 8, { align: "center" });
+    });
+  }
+
+  drawOutcomeCard(doc, path.outcome, outcomeX, y + 5, outcomeW, h - 10);
+}
+
+function addExecutiveRoadmapVisualPages(
+  doc: JsPDF,
+  schedule: ProgrammeSchedule,
+  reportDate: string,
+  model: ReturnType<typeof buildExecutiveRoadmapModel>,
+) {
+  const title = weeklyProgrammeTitle(schedule.title);
+  const paths = model.paths.length ? model.paths : [];
+  const lanesPerPage = 2;
+  const chunks = paths.length ? Array.from({ length: Math.ceil(paths.length / lanesPerPage) }, (_, index) => paths.slice(index * lanesPerPage, index * lanesPerPage + lanesPerPage)) : [[]];
+
+  chunks.forEach((chunk, index) => {
+    doc.addPage("a4", "landscape");
+    addHeader(doc, title, "Executive roadmap visual", reportDate);
+    let y = sectionTitle(doc, index ? `Executive roadmap visual ${index + 1}` : "Executive roadmap visual", 36);
+    const pageWidth = doc.internal.pageSize.getWidth();
+    y = drawRoadmapLegend(doc, 12, y, pageWidth - 24);
+    if (!chunk.length) {
+      addTextBox(doc, "No executive milestones found", "Flag the high-level outcomes in Microsoft Project using the Executive Milestones field, then re-import the XML.", 12, y, pageWidth - 24, 30);
+      return;
+    }
+    chunk.forEach((path) => {
+      drawRoadmapLane(doc, path, 12, y, pageWidth - 24, 54);
+      y += 62;
+    });
+  });
+}
+
 function table(
   doc: JsPDF,
   autoTable: AutoTable,
@@ -365,7 +532,7 @@ export async function exportWeeklyDistributionPackPdf({
       `Forecast to go live: ${forecastToGoLiveLabel(schedule)}.`,
       `Next milestone: ${nextMilestone ? `${formatDate(nextMilestone.finishDate)} - ${nextMilestone.name}` : "None in selected window"}.`,
       `Main blocker: ${mainBlocker}.`,
-      "Pack contents: weekly status, executive roadmap summary, and per-person action packs.",
+      "Pack contents: weekly status, visual executive roadmap, and per-person action packs.",
     ],
     12,
     y,
@@ -379,7 +546,7 @@ export async function exportWeeklyDistributionPackPdf({
     ["Pack section", "What it contains"],
     [
       ["Weekly executive status", "RAG, status summary, forecast, progress, next focus and changes."],
-      ["Executive roadmap", "High-level milestones and their key predecessor/enabler path."],
+      ["Executive roadmap", "Visual lane view of high-level milestones and their key predecessor/enabler path."],
       ["Team action packs", "One action section per owner, with due soon / attention items first."],
     ],
     { 0: { cellWidth: 48, fontStyle: "bold" }, 1: { cellWidth: 136 } },
@@ -401,43 +568,18 @@ export async function exportWeeklyDistributionPackPdf({
   y += addTextBox(doc, "This week / next", priorityItems.length ? priorityItems : ["No priority actions summary found."], left, y, pageWidth - 24, 30) + 7;
   addTextBox(doc, "What changed this week", whatChangedItems.length ? whatChangedItems : ["No material changes captured in the latest weekly row."], left, y, pageWidth - 24, 30);
 
-  doc.addPage();
-  addHeader(doc, title, "Executive roadmap", reportDate);
-  y = sectionTitle(doc, "Executive roadmap summary", 36);
-  y = table(
-    doc,
-    tablePlugin,
-    y,
-    ["Executive milestone", "Date", "Status", "Key predecessor / enabler path"],
-    model.paths.length
-      ? model.paths.map((path) => [
-        path.outcome.name,
-        formatDate(path.outcome.finishDate),
-        executiveToneLabel(path.outcome),
-        path.dependencies.slice(0, 6).map((item) => `${formatDate(item.finishDate)} - ${item.name}`).join("\n") || "No linked predecessor milestones shown.",
-      ])
-      : [["No executive milestones found", "-", "-", "Flag high-level outcomes in Microsoft Project using Executive Milestones."]],
-    { 0: { cellWidth: 50, fontStyle: "bold" }, 1: { cellWidth: 22 }, 2: { cellWidth: 24, fontStyle: "bold" }, 3: { cellWidth: 88 } },
-  );
-  table(
-    doc,
-    tablePlugin,
-    y,
-    ["Milestone", "Status rationale"],
-    model.outcomes.slice(0, 8).map((item) => [item.name, executiveToneAssessment(item).summary]),
-    { 0: { cellWidth: 62, fontStyle: "bold" }, 1: { cellWidth: 122 } },
-  );
+  addExecutiveRoadmapVisualPages(doc, schedule, reportDate, model);
 
   const sortedPacks = ownerPacks
     .filter((pack) => pack.items.some((item) => isOpenStatus(item.displayStatus ?? item.status)))
     .sort((a, b) => a.ownerName.localeCompare(b.ownerName));
   if (sortedPacks.length) {
     sortedPacks.forEach((pack) => {
-      doc.addPage();
+      doc.addPage("a4", "portrait");
       addActionPackPage(doc, tablePlugin, schedule, reportDate, dateWindow, pack);
     });
   } else {
-    doc.addPage();
+    doc.addPage("a4", "portrait");
     addHeader(doc, title, "Team action packs", reportDate);
     y = sectionTitle(doc, "Team action packs", 36);
     addTextBox(doc, "No active assigned actions", "No open assigned meeting actions or Project plan tasks were found in the imported sources.", 12, y, pageWidth - 24, 28);
