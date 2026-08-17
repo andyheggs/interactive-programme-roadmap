@@ -2236,10 +2236,9 @@ function WeeklyExecutiveStatusView({
                 const id = `decision-${decision.id}`;
                 return (
                   <div className={`weekly-row curated ${dragItem?.id === id ? "dragging" : ""}`} key={decision.id} {...rowDropHandlers("decisions", id, visibleIds)}>
-                    <div>
-                      <span>{formatDateOrText(decision.decisionRequiredBy ?? decision.decisionDate, "Decision date tbc")}</span>
+                    <div className="weekly-decision-row">
                       <strong>{decision.title}</strong>
-                      <em>{decision.decisionMaker ?? decision.owner ?? decision.status ?? "Decision required"}</em>
+                      <em>Decision sits with: {decision.decisionMaker ?? decision.owner ?? "Not assigned"}</em>
                     </div>
                     {renderControls("decisions", id, visibleIds)}
                   </div>
