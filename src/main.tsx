@@ -37,6 +37,7 @@ import { exportGanttPdf, type GanttPdfSection } from "./lib/exportGanttPdf";
 import { buildExecutiveRoadmapModel, executiveToneAssessment, executiveToneLabel } from "./lib/executiveRoadmapData";
 import { exportTeamActionsPdf as exportTeamActionsA4Pdf } from "./lib/exportTeamActionsPdf";
 import { exportWeeklyStatusPdf as exportWeeklyStatusA4Pdf } from "./lib/exportWeeklyStatusPdf";
+import { exportWeeklyDistributionPackPdf } from "./lib/exportWeeklyDistributionPackPdf";
 import { parseMicrosoftProjectXml } from "./lib/parseMicrosoftProjectXml";
 import { parseMeetingTracker } from "./lib/parseMeetingTracker";
 import { clamp, durationLabel, formatDate, parseDate, uniqueSorted } from "./lib/dateUtils";
@@ -3097,6 +3098,7 @@ function DownloadsHub({
   onExportSnapshotImage,
   onExportSnapshotPosterPdf,
   onExportSnapshotHtml,
+  onExportWeeklyDistributionPack,
 }: {
   schedule: ProgrammeSchedule;
   tracker?: TrackerData;
@@ -3111,8 +3113,15 @@ function DownloadsHub({
   onExportSnapshotImage: () => void;
   onExportSnapshotPosterPdf: () => void;
   onExportSnapshotHtml: () => void;
+  onExportWeeklyDistributionPack: () => void;
 }) {
   const downloads = [
+    {
+      title: "Weekly distribution pack",
+      meta: "One PDF containing the email-ready summary, weekly status, executive roadmap summary and per-person action packs.",
+      action: "Download Pack",
+      onClick: onExportWeeklyDistributionPack,
+    },
     {
       title: "Programme roadmap PDF",
       meta: "Exports the current roadmap workspace view using the selected filters and date window.",
@@ -3219,6 +3228,7 @@ function ReportingContent({
   onExportSnapshotImage,
   onExportSnapshotPosterPdf,
   onExportSnapshotHtml,
+  onExportWeeklyDistributionPack,
   executiveContextUids,
   executiveRemovedUids,
   executiveLaneOrderUids,
@@ -3244,6 +3254,7 @@ function ReportingContent({
   onExportSnapshotImage: () => void;
   onExportSnapshotPosterPdf: () => void;
   onExportSnapshotHtml: () => void;
+  onExportWeeklyDistributionPack: () => void;
   executiveContextUids: string[];
   executiveRemovedUids: string[];
   executiveLaneOrderUids: string[];
@@ -3254,7 +3265,7 @@ function ReportingContent({
   weeklyStatusCuration: WeeklyStatusCuration;
   onUpdateWeeklyStatusCuration: (updater: (current: WeeklyStatusCuration) => WeeklyStatusCuration) => void;
   onExportWeeklyStatusPdf: () => void;
-  onExportTeamActionsPdf: (items: TeamWorkItem[]) => void;
+  onExportTeamActionsPdf: (items: TeamWorkItem[], options?: { ownerName?: string; ownerPacks?: TeamActionPack[] }) => void;
 }) {
   if (page === "home") return <HomeDashboard schedule={schedule} tracker={tracker} dateWindow={dateWindow} />;
   if (page === "ceo") return (
@@ -3309,6 +3320,7 @@ function ReportingContent({
       onExportSnapshotImage={onExportSnapshotImage}
       onExportSnapshotPosterPdf={onExportSnapshotPosterPdf}
       onExportSnapshotHtml={onExportSnapshotHtml}
+      onExportWeeklyDistributionPack={onExportWeeklyDistributionPack}
     />
   );
   if (page === "release-roadmap") return <ReleasePlaceholder title="Release Roadmap" />;
@@ -3571,6 +3583,33 @@ function App() {
     }
   }
 
+  async function exportWeeklyDistributionPack() {
+    setError(undefined);
+    const allTeamItems = combineTeamWorkItems(schedule, tracker);
+    const packs = buildTeamActionPacks(allTeamItems);
+    const toPdfItem = (item: TeamWorkItem) => ({
+      ...item,
+      displayStatus: statusLabel(item),
+    });
+    try {
+      await exportWeeklyDistributionPackPdf({
+        schedule,
+        tracker,
+        dateWindow,
+        curation: weeklyStatusCuration,
+        contextItemUids: executiveContextUids,
+        removedItemUids: executiveRemovedUids,
+        laneOrderUids: executiveLaneOrderUids,
+        ownerPacks: packs.map((pack) => ({
+          ownerName: pack.ownerName,
+          items: pack.items.map(toPdfItem),
+        })),
+      });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "The Weekly Distribution Pack PDF could not be generated.");
+    }
+  }
+
   return (
     <main>
       <header className="app-header">
@@ -3666,6 +3705,7 @@ function App() {
             onUpdateWeeklyStatusCuration={setWeeklyStatusCuration}
             onExportWeeklyStatusPdf={exportWeeklyStatusPdf}
             onExportTeamActionsPdf={exportTeamActionsPdf}
+            onExportWeeklyDistributionPack={exportWeeklyDistributionPack}
           />
         </section>
       )}

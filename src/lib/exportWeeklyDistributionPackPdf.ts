@@ -1,0 +1,448 @@
+import type { jsPDF as JsPDF } from "jspdf";
+import type { ProgrammeItem, ProgrammeSchedule } from "../types/programme";
+import type { TrackerData, WeeklyStatusCuration, WeeklySummary } from "../types/reporting";
+import type { TeamActionPdfItem } from "./exportTeamActionsPdf";
+import { buildExecutiveRoadmapModel, executiveToneAssessment, executiveToneLabel } from "./executiveRoadmapData";
+import { formatDate, parseDate } from "./dateUtils";
+
+type DateWindow = {
+  start?: Date;
+  end?: Date;
+  label: string;
+};
+
+type OwnerPack = {
+  ownerName: string;
+  items: TeamActionPdfItem[];
+};
+
+type ExportWeeklyDistributionPackOptions = {
+  schedule: ProgrammeSchedule;
+  tracker?: TrackerData;
+  dateWindow: DateWindow;
+  curation?: WeeklyStatusCuration;
+  contextItemUids?: string[];
+  removedItemUids?: string[];
+  laneOrderUids?: string[];
+  ownerPacks: OwnerPack[];
+};
+
+type Rgb = [number, number, number];
+type AutoTable = typeof import("jspdf-autotable").default;
+type TableRow = Array<string | number>;
+
+const colours: Record<"ink" | "muted" | "deep" | "line" | "pale" | "green" | "amber" | "red" | "blue", Rgb> = {
+  ink: [28, 38, 33],
+  muted: [91, 105, 96],
+  deep: [33, 76, 67],
+  line: [199, 209, 203],
+  pale: [243, 247, 245],
+  green: [46, 125, 85],
+  amber: [232, 117, 26],
+  red: [179, 58, 50],
+  blue: [61, 120, 169],
+};
+
+function fileSlug(value: string): string {
+  return value.replace(/[^a-z0-9]+/gi, "-").replace(/^-|-$/g, "").toLowerCase() || "weekly-pack";
+}
+
+function normaliseText(value?: string): string {
+  return (value ?? "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+}
+
+function meaningfulText(value?: string): string | undefined {
+  const text = value?.trim();
+  if (!text) return undefined;
+  const normalised = normaliseText(text);
+  if (
+    !normalised ||
+    normalised === "na" ||
+    normalised === "n a" ||
+    normalised === "none" ||
+    normalised === "nil" ||
+    normalised === "not set" ||
+    normalised === "not captured" ||
+    normalised.startsWith("not stated") ||
+    normalised.startsWith("to be confirmed") ||
+    normalised === "tbc"
+  ) {
+    return undefined;
+  }
+  return text;
+}
+
+function weeklyProgrammeTitle(value?: string): string {
+  const title = (value ?? "").trim() || "Programme Delivery";
+  const withoutVersion = title
+    .replace(/\s+(?:-|\u2013)\s*v\d.*$/i, "")
+    .replace(/\s*\/\s*/g, " ")
+    .trim();
+  if (/^daf programme delivery$/i.test(withoutVersion)) return "Data Asset Foundation Programme Delivery";
+  if (/^daf\b/i.test(withoutVersion)) return withoutVersion.replace(/^daf\b/i, "Data Asset Foundation");
+  return withoutVersion || title;
+}
+
+function splitDigest(value?: string, limit = 5): string[] {
+  const text = meaningfulText(value);
+  if (!text) return [];
+  const lineParts = text.split(/\n+/).map((part) => part.trim()).filter(Boolean);
+  const parts = lineParts.length > 1 ? lineParts : text.split(/(?<=[.!?])\s+/).map((part) => part.trim()).filter(Boolean);
+  return parts.slice(0, limit);
+}
+
+function bySoonest(a?: string, b?: string): number {
+  return (parseDate(a)?.getTime() ?? Number.MAX_SAFE_INTEGER) - (parseDate(b)?.getTime() ?? Number.MAX_SAFE_INTEGER);
+}
+
+function weeklySummaryDate(summary: { meetingDate?: string; weekEnding?: string; lastUpdated?: string }): Date | undefined {
+  return parseDate(summary.meetingDate) ?? parseDate(summary.weekEnding) ?? parseDate(summary.lastUpdated);
+}
+
+function latestWeeklySummary(tracker?: TrackerData): WeeklySummary | undefined {
+  return (tracker?.weeklySummaries ?? [])
+    .slice()
+    .sort((a, b) => (weeklySummaryDate(b)?.getTime() ?? 0) - (weeklySummaryDate(a)?.getTime() ?? 0))[0];
+}
+
+function isOpenStatus(status?: string): boolean {
+  const value = normaliseText(status);
+  return !["complete", "completed", "closed", "done", "resolved", "implemented"].includes(value);
+}
+
+function isCompleteStatus(status?: string): boolean {
+  return !isOpenStatus(status);
+}
+
+function isRedOrAmber(value?: string): boolean {
+  const label = normaliseText(value);
+  return label.includes("red") || label.includes("amber") || label.includes("high");
+}
+
+function itemImportance(item: ProgrammeItem): number {
+  const level = normaliseText(item.milestoneLevel);
+  if (item.executiveMilestone || level.includes("executive")) return 5;
+  if (item.boardReportable || level.includes("board")) return 4;
+  if (item.roadmapMilestone) return 3;
+  if (item.governanceGate || item.decisionRequired) return 2;
+  return 1;
+}
+
+function programmeMilestones(schedule: ProgrammeSchedule): ProgrammeItem[] {
+  return schedule.items
+    .filter((item) => item.isMilestone || item.roadmapMilestone)
+    .sort((a, b) => itemImportance(b) - itemImportance(a) || bySoonest(a.finishDate, b.finishDate));
+}
+
+function executiveMilestoneItems(schedule: ProgrammeSchedule): ProgrammeItem[] {
+  const executive = schedule.items
+    .filter((item) => item.executiveMilestone || normaliseText(item.milestoneLevel) === "executive milestone")
+    .sort((a, b) => bySoonest(a.finishDate, b.finishDate));
+  if (executive.length) return executive;
+  return programmeMilestones(schedule).filter((item) => itemImportance(item) >= 4).slice(0, 5);
+}
+
+function programmeDeliveryOutcome(schedule: ProgrammeSchedule, outcomes: ProgrammeItem[]): ProgrammeItem | undefined {
+  const candidates = outcomes.length ? outcomes : executiveMilestoneItems(schedule);
+  return candidates.find((item) => /platform.*go live|go live/i.test(item.name))
+    ?? candidates.slice().sort((a, b) => bySoonest(b.finishDate, a.finishDate))[0]
+    ?? schedule.items.slice().sort((a, b) => bySoonest(b.finishDate, a.finishDate))[0];
+}
+
+function forecastToGoLiveLabel(schedule: ProgrammeSchedule): string {
+  const outcome = programmeDeliveryOutcome(schedule, executiveMilestoneItems(schedule));
+  if (outcome?.finishDate) return `${formatDate(outcome.finishDate)} - ${outcome.name}`;
+  return formatDate(schedule.finishDate);
+}
+
+function generatedStatusSummary(weekly?: WeeklySummary, mainBlocker?: string): string | undefined {
+  const progress = [...splitDigest(weekly?.keyProgress, 2), ...splitDigest(weekly?.whatChanged, 1)].slice(0, 2);
+  const priorities = splitDigest(weekly?.priorityActions, 2);
+  const blocker = meaningfulText(mainBlocker) ?? meaningfulText(weekly?.keyRisksOrIssues) ?? meaningfulText(weekly?.ragRationale);
+  const rag = meaningfulText(weekly?.overallRag);
+  const parts: string[] = [];
+  if (rag) parts.push(`The programme is currently ${rag}.`);
+  if (progress.length) parts.push(progress.join(" "));
+  if (priorities.length) parts.push(`Immediate focus: ${priorities.join(" ")}`);
+  if (blocker) parts.push(`Main blocker: ${blocker}.`);
+  return parts.length ? parts.join(" ") : undefined;
+}
+
+function toneColour(value?: string): Rgb {
+  const text = normaliseText(value);
+  if (text.includes("red") || text.includes("overdue") || text.includes("blocked")) return colours.red;
+  if (text.includes("amber") || text.includes("soon") || text.includes("high")) return colours.amber;
+  if (text.includes("green") || text.includes("complete")) return colours.green;
+  return colours.blue;
+}
+
+function addHeader(doc: JsPDF, title: string, subtitle: string, reportDate: string) {
+  const pageWidth = doc.internal.pageSize.getWidth();
+  doc.setFillColor(...colours.deep);
+  doc.rect(0, 0, pageWidth, 24, "F");
+  doc.setTextColor(255, 255, 255);
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(12);
+  doc.text(title, 12, 9);
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(8);
+  doc.text(subtitle, 12, 17);
+  doc.text(`Generated ${formatDate(reportDate)}`, pageWidth - 12, 17, { align: "right" });
+}
+
+function addFooter(doc: JsPDF) {
+  const pageWidth = doc.internal.pageSize.getWidth();
+  const pageHeight = doc.internal.pageSize.getHeight();
+  const pageCount = doc.getNumberOfPages();
+  for (let page = 1; page <= pageCount; page += 1) {
+    doc.setPage(page);
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(7);
+    doc.setTextColor(...colours.muted);
+    doc.text(`Page ${page} of ${pageCount}`, pageWidth - 12, pageHeight - 6, { align: "right" });
+  }
+}
+
+function sectionTitle(doc: JsPDF, title: string, y: number): number {
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(13);
+  doc.setTextColor(...colours.ink);
+  doc.text(title, 12, y);
+  doc.setDrawColor(...colours.line);
+  doc.line(12, y + 3, doc.internal.pageSize.getWidth() - 12, y + 3);
+  return y + 10;
+}
+
+function addTextBox(doc: JsPDF, title: string, body: string | string[], x: number, y: number, w: number, minHeight = 30): number {
+  const lines = Array.isArray(body) ? body : doc.splitTextToSize(body, w - 10);
+  const h = Math.max(minHeight, 16 + lines.length * 4.4);
+  doc.setDrawColor(...colours.line);
+  doc.setFillColor(...colours.pale);
+  doc.roundedRect(x, y, w, h, 2.5, 2.5, "FD");
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(8);
+  doc.setTextColor(...colours.muted);
+  doc.text(title.toUpperCase(), x + 5, y + 7);
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(8.4);
+  doc.setTextColor(...colours.ink);
+  doc.text(lines, x + 5, y + 15);
+  return h;
+}
+
+function table(
+  doc: JsPDF,
+  autoTable: AutoTable,
+  y: number,
+  head: string[],
+  body: TableRow[],
+  columnStyles: Record<number, object> = {},
+  headColour: Rgb = colours.deep,
+): number {
+  autoTable(doc, {
+    startY: y,
+    margin: { left: 12, right: 12, bottom: 14 },
+    head: [head],
+    body,
+    theme: "grid",
+    showHead: "everyPage",
+    styles: { font: "helvetica", fontSize: 7.5, cellPadding: 2.2, textColor: colours.ink, lineColor: colours.line, lineWidth: 0.1, overflow: "linebreak", valign: "top" },
+    headStyles: { fillColor: headColour, textColor: [255, 255, 255], fontStyle: "bold", fontSize: 7.4 },
+    alternateRowStyles: { fillColor: colours.pale },
+    columnStyles,
+  });
+  return ((doc as JsPDF & { lastAutoTable?: { finalY?: number } }).lastAutoTable?.finalY ?? y) + 8;
+}
+
+function activeAttentionItem(item: TeamActionPdfItem): boolean {
+  const status = item.displayStatus ?? item.status;
+  const due = parseDate(item.dueDate);
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const soon = new Date(today);
+  soon.setDate(soon.getDate() + 14);
+  return isOpenStatus(status) && (normaliseText(status).includes("blocked") || normaliseText(status).includes("overdue") || Boolean(due && due <= soon));
+}
+
+function actionSort(a: TeamActionPdfItem, b: TeamActionPdfItem): number {
+  const attentionDelta = Number(activeAttentionItem(b)) - Number(activeAttentionItem(a));
+  if (attentionDelta) return attentionDelta;
+  return bySoonest(a.dueDate, b.dueDate) || a.title.localeCompare(b.title);
+}
+
+function addActionPackPage(doc: JsPDF, autoTable: AutoTable, schedule: ProgrammeSchedule, reportDate: string, dateWindow: DateWindow, pack: OwnerPack) {
+  addHeader(doc, weeklyProgrammeTitle(schedule.title), `${pack.ownerName} action pack`, reportDate);
+  let y = sectionTitle(doc, pack.ownerName, 36);
+  const activeItems = pack.items.filter((item) => isOpenStatus(item.displayStatus ?? item.status)).sort(actionSort);
+  const dueSoon = activeItems.filter(activeAttentionItem);
+  const upcoming = activeItems.filter((item) => !activeAttentionItem(item));
+  const summary = `${dueSoon.length} due soon / attention items. ${upcoming.length} upcoming items.`;
+  y += addTextBox(doc, "Action summary", summary, 12, y, doc.internal.pageSize.getWidth() - 24, 22) + 6;
+  y = table(
+    doc,
+    autoTable,
+    y,
+    ["Due", "Status", "Action / task / milestone", "Source", "Notes"],
+    dueSoon.length
+      ? dueSoon.map((item) => [formatDate(item.dueDate), item.displayStatus ?? item.status ?? "Open", item.title, item.source, item.latestUpdate || item.description || ""])
+      : [["-", "-", "Nothing due soon, overdue or blocked.", "-", ""]],
+    { 0: { cellWidth: 22, fontStyle: "bold" }, 1: { cellWidth: 24, fontStyle: "bold" }, 2: { cellWidth: 62, fontStyle: "bold" }, 3: { cellWidth: 28 }, 4: { cellWidth: 48 } },
+    colours.amber,
+  );
+  table(
+    doc,
+    autoTable,
+    y,
+    ["Due", "Status", "Action / task / milestone", "Source", "Notes"],
+    upcoming.length
+      ? upcoming.map((item) => [formatDate(item.dueDate), item.displayStatus ?? item.status ?? "Open", item.title, item.source, item.latestUpdate || item.description || ""])
+      : [["-", "-", "No later upcoming assigned work found.", "-", ""]],
+    { 0: { cellWidth: 22, fontStyle: "bold" }, 1: { cellWidth: 24 }, 2: { cellWidth: 62, fontStyle: "bold" }, 3: { cellWidth: 28 }, 4: { cellWidth: 48 } },
+  );
+}
+
+export async function exportWeeklyDistributionPackPdf({
+  schedule,
+  tracker,
+  dateWindow,
+  curation,
+  contextItemUids,
+  removedItemUids,
+  laneOrderUids,
+  ownerPacks,
+}: ExportWeeklyDistributionPackOptions) {
+  const [{ default: jsPDF }, { default: autoTable }] = await Promise.all([import("jspdf"), import("jspdf-autotable")]);
+  const doc = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
+  const tablePlugin = autoTable as AutoTable;
+  const reportDate = new Date().toISOString();
+  const title = weeklyProgrammeTitle(schedule.title);
+  const weekly = latestWeeklySummary(tracker);
+  const openRisks = (tracker?.risks ?? []).filter((item) => isOpenStatus(item.status));
+  const openIssues = (tracker?.issues ?? []).filter((item) => isOpenStatus(item.status));
+  const riskIssues = [
+    ...openRisks.map((item) => ({ kind: "Risk", title: item.title, owner: item.owner ?? item.stream ?? "Not set", marker: item.rag ?? item.likelihood ?? "Risk", update: item.latestUpdate ?? item.mitigation ?? item.impact ?? "" })),
+    ...openIssues.map((item) => ({ kind: "Issue", title: item.title, owner: item.owner ?? item.stream ?? "Not set", marker: item.rag ?? item.priority ?? "Issue", update: item.latestUpdate ?? item.requiredAction ?? item.impact ?? "" })),
+  ].sort((a, b) => Number(isRedOrAmber(b.marker)) - Number(isRedOrAmber(a.marker)) || a.title.localeCompare(b.title));
+  const mainBlocker = meaningfulText(weekly?.mainBlocker) ?? riskIssues[0]?.title ?? "None flagged";
+  const statusSummary =
+    curation?.statusSummaryOverride ??
+    meaningfulText(weekly?.executiveStatusSummary) ??
+    meaningfulText(weekly?.openingLine) ??
+    meaningfulText(weekly?.ragRationale) ??
+    generatedStatusSummary(weekly, mainBlocker) ??
+    "Import the latest tracker to populate the weekly status update.";
+  const rag = meaningfulText(weekly?.overallRag) ?? "Not captured";
+  const model = buildExecutiveRoadmapModel(schedule, tracker, dateWindow, { contextItemUids, removedItemUids, laneOrderUids });
+  const nextMilestone = programmeMilestones(schedule)
+    .filter((item) => isOpenStatus(item.status) && parseDate(item.finishDate) && (!dateWindow.start || parseDate(item.finishDate)! >= dateWindow.start) && (!dateWindow.end || parseDate(item.finishDate)! <= dateWindow.end))
+    .sort((a, b) => bySoonest(a.finishDate, b.finishDate))[0];
+  const progressItems = splitDigest(weekly?.keyProgress, 5);
+  const priorityItems = splitDigest(weekly?.priorityActions, 5);
+  const whatChangedItems = splitDigest(curation?.whatChangedOverride ?? weekly?.whatChanged, 5);
+
+  addHeader(doc, title, "Weekly distribution pack", reportDate);
+  let y = sectionTitle(doc, "Email-ready summary", 36);
+  const pageWidth = doc.internal.pageSize.getWidth();
+  const ragBoxWidth = 40;
+  const textWidth = pageWidth - 36 - ragBoxWidth;
+  const summaryHeight = addTextBox(doc, title, statusSummary, 12, y, textWidth, 44);
+  doc.setFillColor(...toneColour(rag));
+  doc.roundedRect(pageWidth - 12 - ragBoxWidth, y, ragBoxWidth, summaryHeight, 2.5, 2.5, "F");
+  doc.setTextColor(255, 255, 255);
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(8);
+  doc.text("OVERALL RAG", pageWidth - 12 - ragBoxWidth / 2, y + 12, { align: "center" });
+  doc.setFontSize(16);
+  doc.text(rag, pageWidth - 12 - ragBoxWidth / 2, y + 25, { align: "center" });
+  doc.setFontSize(7);
+  doc.text(formatDate(reportDate), pageWidth - 12 - ragBoxWidth / 2, y + 35, { align: "center" });
+  y += summaryHeight + 8;
+  y += addTextBox(
+    doc,
+    "Suggested email wording",
+    [
+      `Status: ${rag}.`,
+      `Forecast to go live: ${forecastToGoLiveLabel(schedule)}.`,
+      `Next milestone: ${nextMilestone ? `${formatDate(nextMilestone.finishDate)} - ${nextMilestone.name}` : "None in selected window"}.`,
+      `Main blocker: ${mainBlocker}.`,
+      "Pack contents: weekly status, executive roadmap summary, and per-person action packs.",
+    ],
+    12,
+    y,
+    pageWidth - 24,
+    44,
+  ) + 8;
+  table(
+    doc,
+    tablePlugin,
+    y,
+    ["Pack section", "What it contains"],
+    [
+      ["Weekly executive status", "RAG, status summary, forecast, progress, next focus and changes."],
+      ["Executive roadmap", "High-level milestones and their key predecessor/enabler path."],
+      ["Team action packs", "One action section per owner, with due soon / attention items first."],
+    ],
+    { 0: { cellWidth: 48, fontStyle: "bold" }, 1: { cellWidth: 136 } },
+  );
+
+  doc.addPage();
+  addHeader(doc, title, "Weekly executive status", reportDate);
+  y = sectionTitle(doc, "Weekly executive status", 36);
+  const cardWidth = (pageWidth - 30) / 2;
+  const left = 12;
+  const right = 18 + cardWidth;
+  addTextBox(doc, "Delivery confidence", meaningfulText(weekly?.goLiveConfidence) ?? "Not captured", left, y, cardWidth, 24);
+  addTextBox(doc, "Forecast to go live", forecastToGoLiveLabel(schedule), right, y, cardWidth, 24);
+  y += 32;
+  addTextBox(doc, "Main blocker", mainBlocker, left, y, cardWidth, 28);
+  addTextBox(doc, "Next milestone", nextMilestone ? `${formatDate(nextMilestone.finishDate)} - ${nextMilestone.name}` : "None in selected window", right, y, cardWidth, 28);
+  y += 38;
+  y += addTextBox(doc, "Last week", progressItems.length ? progressItems : ["No weekly progress summary found."], left, y, pageWidth - 24, 30) + 7;
+  y += addTextBox(doc, "This week / next", priorityItems.length ? priorityItems : ["No priority actions summary found."], left, y, pageWidth - 24, 30) + 7;
+  addTextBox(doc, "What changed this week", whatChangedItems.length ? whatChangedItems : ["No material changes captured in the latest weekly row."], left, y, pageWidth - 24, 30);
+
+  doc.addPage();
+  addHeader(doc, title, "Executive roadmap", reportDate);
+  y = sectionTitle(doc, "Executive roadmap summary", 36);
+  y = table(
+    doc,
+    tablePlugin,
+    y,
+    ["Executive milestone", "Date", "Status", "Key predecessor / enabler path"],
+    model.paths.length
+      ? model.paths.map((path) => [
+        path.outcome.name,
+        formatDate(path.outcome.finishDate),
+        executiveToneLabel(path.outcome),
+        path.dependencies.slice(0, 6).map((item) => `${formatDate(item.finishDate)} - ${item.name}`).join("\n") || "No linked predecessor milestones shown.",
+      ])
+      : [["No executive milestones found", "-", "-", "Flag high-level outcomes in Microsoft Project using Executive Milestones."]],
+    { 0: { cellWidth: 50, fontStyle: "bold" }, 1: { cellWidth: 22 }, 2: { cellWidth: 24, fontStyle: "bold" }, 3: { cellWidth: 88 } },
+  );
+  table(
+    doc,
+    tablePlugin,
+    y,
+    ["Milestone", "Status rationale"],
+    model.outcomes.slice(0, 8).map((item) => [item.name, executiveToneAssessment(item).summary]),
+    { 0: { cellWidth: 62, fontStyle: "bold" }, 1: { cellWidth: 122 } },
+  );
+
+  const sortedPacks = ownerPacks
+    .filter((pack) => pack.items.some((item) => isOpenStatus(item.displayStatus ?? item.status)))
+    .sort((a, b) => a.ownerName.localeCompare(b.ownerName));
+  if (sortedPacks.length) {
+    sortedPacks.forEach((pack) => {
+      doc.addPage();
+      addActionPackPage(doc, tablePlugin, schedule, reportDate, dateWindow, pack);
+    });
+  } else {
+    doc.addPage();
+    addHeader(doc, title, "Team action packs", reportDate);
+    y = sectionTitle(doc, "Team action packs", 36);
+    addTextBox(doc, "No active assigned actions", "No open assigned meeting actions or Project plan tasks were found in the imported sources.", 12, y, pageWidth - 24, 28);
+  }
+
+  addFooter(doc);
+  doc.save(`${fileSlug(schedule.title)}-weekly-distribution-pack.pdf`);
+}
