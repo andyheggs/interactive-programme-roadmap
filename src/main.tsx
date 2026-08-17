@@ -1976,8 +1976,8 @@ function WeeklyExecutiveStatusView({
   const moreDecisions = remainingWeeklyItems(allDecisions, decisionsNeeded, (decision) => `decision-${decision.id}`);
   const moreChanges = remainingWeeklyItems(allChanges, significantChanges, (change) => `change-${change.id}`);
   const [expandedTools, setExpandedTools] = useState<string[]>([]);
-  const [showStatusSummaryEditor, setShowStatusSummaryEditor] = useState(true);
-  const [showWhatChangedEditor, setShowWhatChangedEditor] = useState(true);
+  const [showStatusSummaryEditor, setShowStatusSummaryEditor] = useState(false);
+  const [showWhatChangedEditor, setShowWhatChangedEditor] = useState(false);
   const [dragItem, setDragItem] = useState<WeeklyDragItem | undefined>();
   const ragTone = toneClass(weekly?.overallRag);
   const displayTitle = weeklyProgrammeTitle(schedule.title);
