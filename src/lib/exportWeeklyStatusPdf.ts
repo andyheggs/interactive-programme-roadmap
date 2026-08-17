@@ -328,12 +328,14 @@ function addBox(doc: JsPDF, x: number, y: number, w: number, h: number, title: s
   doc.setFont("helvetica", "bold");
   doc.setFontSize(8);
   setText(doc, colours.muted);
-  doc.text(title.toUpperCase(), x + 4, y + 6);
+  doc.text(title.toUpperCase(), x + 4, y + 7);
+  doc.setDrawColor(...colours.line);
+  doc.line(x + 4, y + 10, x + w - 4, y + 10);
   doc.setFont("helvetica", "bold");
   doc.setFontSize(9.5);
   setText(doc, colours.ink);
   const lines = Array.isArray(body) ? body : doc.splitTextToSize(body, w - 8);
-  doc.text(lines.slice(0, 7), x + 4, y + 13);
+  doc.text(lines.slice(0, 7), x + 4, y + 17);
 }
 
 function textBoxHeight(doc: JsPDF, lines: string[], width: number): number {

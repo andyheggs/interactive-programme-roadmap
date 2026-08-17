@@ -1828,6 +1828,9 @@ body.executive-export-light .executive-roadmap {
   color: rgba(255, 255, 255, 0.86);
   line-height: 1.45;
 }
+.weekly-header .snapshot-eyebrow {
+  color: #90e4c9;
+}
 .weekly-rag {
   display: grid;
   align-content: center;
@@ -1968,14 +1971,23 @@ body.executive-export-light .executive-roadmap {
 }
 .weekly-kpis article {
   display: grid;
-  align-content: space-between;
+  align-content: start;
+  gap: 16px;
   min-height: 104px;
   background: linear-gradient(180deg, rgba(61, 120, 169, 0.1), transparent 70%), var(--surface);
 }
-.weekly-kpis strong {
+.weekly-kpis article span {
+  display: block;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--border-soft);
   color: var(--text-strong);
-  font-size: 1rem;
-  line-height: 1.25;
+  line-height: 1.2;
+}
+.weekly-kpis strong {
+  display: block;
+  color: var(--text-strong);
+  font-size: 1.05rem;
+  line-height: 1.32;
 }
 .weekly-focus {
   display: grid;
