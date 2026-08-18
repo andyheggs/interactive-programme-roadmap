@@ -1781,8 +1781,8 @@ body.executive-export-light .executive-roadmap {
 }
 .weekly-header {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 170px;
-  gap: 16px;
+  grid-template-columns: minmax(0, 1fr) 160px;
+  gap: 14px;
   align-items: stretch;
   padding: 20px;
   border-radius: 8px;
@@ -1823,7 +1823,7 @@ body.executive-export-light .executive-roadmap {
   font-size: 1.7rem;
 }
 .weekly-header p {
-  max-width: 980px;
+  max-width: none;
   margin: 0;
   color: rgba(255, 255, 255, 0.86);
   line-height: 1.45;

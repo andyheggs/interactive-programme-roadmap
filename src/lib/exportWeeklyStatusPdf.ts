@@ -337,16 +337,16 @@ function addBox(doc: JsPDF, x: number, y: number, w: number, h: number, title: s
   doc.setFillColor(255, 255, 255);
   doc.roundedRect(x, y, w, h, 2.2, 2.2, "FD");
   doc.setFont("helvetica", "bold");
-  doc.setFontSize(8);
+  doc.setFontSize(7.6);
   setText(doc, colours.muted);
   doc.text(title.toUpperCase(), x + 4, y + 7);
   doc.setDrawColor(...colours.line);
   doc.line(x + 4, y + 10, x + w - 4, y + 10);
   doc.setFont("helvetica", "bold");
-  doc.setFontSize(9.5);
+  doc.setFontSize(10);
   setText(doc, colours.ink);
   const lines = Array.isArray(body) ? body : doc.splitTextToSize(body, w - 8);
-  doc.text(lines.slice(0, 7), x + 4, y + 17);
+  doc.text(lines.slice(0, 7), x + 4, y + 18);
 }
 
 function textBoxHeight(doc: JsPDF, lines: string[], width: number): number {
@@ -489,15 +489,10 @@ export async function exportWeeklyStatusPdf({ schedule, tracker, dateWindow, cur
   addHeader(doc, displayTitle, reportDate);
 
   let y = 36;
-  doc.setFont("helvetica", "bold");
-  doc.setFontSize(12);
-  setText(doc, colours.ink);
-  doc.text("Status snapshot", 12, y);
-  y += 5;
   const snapshotX = 12;
   const snapshotWidth = pageWidth - 24;
   const snapshotPadding = 5;
-  const ragBoxWidth = 42;
+  const ragBoxWidth = 38;
   const ragGap = 10;
   const ragBoxX = snapshotX + snapshotWidth - ragBoxWidth - snapshotPadding;
   const textX = snapshotX + snapshotPadding;

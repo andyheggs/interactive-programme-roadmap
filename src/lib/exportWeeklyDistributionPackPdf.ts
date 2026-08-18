@@ -455,46 +455,22 @@ export async function exportWeeklyDistributionPackPdf({
   addHeader(doc, title, "Weekly distribution pack", reportDate);
   let y = sectionTitle(doc, "Email-ready summary", 36);
   const pageWidth = doc.internal.pageSize.getWidth();
-  const ragBoxWidth = 40;
-  const textWidth = pageWidth - 36 - ragBoxWidth;
+  const ragBoxWidth = 38;
+  const ragGap = 10;
+  const ragBoxX = pageWidth - 12 - ragBoxWidth;
+  const textWidth = ragBoxX - 12 - ragGap;
   const summaryHeight = addTextBox(doc, title, statusSummary, 12, y, textWidth, 44);
   doc.setFillColor(...toneColour(rag));
-  doc.roundedRect(pageWidth - 12 - ragBoxWidth, y, ragBoxWidth, summaryHeight, 2.5, 2.5, "F");
+  doc.roundedRect(ragBoxX, y, ragBoxWidth, summaryHeight, 2.5, 2.5, "F");
   doc.setTextColor(255, 255, 255);
   doc.setFont("helvetica", "bold");
   doc.setFontSize(8);
-  doc.text("OVERALL RAG", pageWidth - 12 - ragBoxWidth / 2, y + 12, { align: "center" });
+  doc.text("OVERALL RAG", ragBoxX + ragBoxWidth / 2, y + 12, { align: "center" });
   doc.setFontSize(16);
-  doc.text(rag, pageWidth - 12 - ragBoxWidth / 2, y + 25, { align: "center" });
+  doc.text(rag, ragBoxX + ragBoxWidth / 2, y + 25, { align: "center" });
   doc.setFontSize(7);
-  doc.text(formatDate(reportDate), pageWidth - 12 - ragBoxWidth / 2, y + 35, { align: "center" });
+  doc.text(formatDate(reportDate), ragBoxX + ragBoxWidth / 2, y + 35, { align: "center" });
   y += summaryHeight + 8;
-  y += addTextBox(
-    doc,
-    "Suggested email wording",
-    [
-      `Status: ${rag}.`,
-      `Forecast to go live: ${forecastToGoLiveLabel(schedule)}.`,
-      `Next milestone: ${nextMilestone ? `${formatDate(nextMilestone.finishDate)} - ${nextMilestone.name}` : "None in selected window"}.`,
-      `Main blocker: ${mainBlocker}.`,
-      "Pack contents: weekly status and visual executive roadmap. Team action packs are generated separately from the Team Action Tracker.",
-    ],
-    12,
-    y,
-    pageWidth - 24,
-    44,
-  ) + 8;
-  table(
-    doc,
-    tablePlugin,
-    y,
-    ["Pack section", "What it contains"],
-    [
-      ["Weekly executive status", "RAG, status summary, forecast, progress, next focus and changes."],
-      ["Executive roadmap", "Visual lane view of high-level milestones and their key predecessor/enabler path."],
-    ],
-    { 0: { cellWidth: 48, fontStyle: "bold" }, 1: { cellWidth: 136 } },
-  );
 
   doc.addPage();
   addHeader(doc, title, "Weekly executive status", reportDate);

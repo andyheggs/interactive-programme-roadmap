@@ -120,10 +120,10 @@ function includesAny(value: string, terms: string[]): boolean {
 function summariseAssessment(tone: ExecutiveTone, reasons: string[]): string {
   const firstReason = reasons[0]?.replace(/\.$/, "");
   if (tone === "amber") return firstReason ? `Amber because ${firstReason.toLowerCase()}.` : "Amber because the date or delivery position is uncertain.";
-  if (tone === "red") return firstReason ? `Red because ${firstReason.toLowerCase()}.` : "Red because the item is blocked, late, overdue or reported Red.";
-  if (tone === "green") return firstReason ? `Green because ${firstReason.toLowerCase()}.` : "Green because the item is complete, confirmed or reported Green.";
-  if (tone === "blue") return firstReason ? `Planned because ${firstReason.toLowerCase()}.` : "Planned because it has a dated forecast but no RAG concern.";
-  return firstReason ? `Not assessed because ${firstReason.toLowerCase()}.` : "Not assessed because no RAG or date confidence is captured.";
+  if (tone === "red") return firstReason ? `Red because ${firstReason.toLowerCase()}.` : "Red because the Project plan status is late or blocked.";
+  if (tone === "green") return firstReason ? `Green because ${firstReason.toLowerCase()}.` : "Green because the Project plan status is complete.";
+  if (tone === "blue") return firstReason ? `Planned because ${firstReason.toLowerCase()}.` : "Planned because the Project plan status is still active and no date assumption is flagged.";
+  return firstReason ? `Not assessed because ${firstReason.toLowerCase()}.` : "Not assessed because no Project plan status is captured.";
 }
 
 function planStatusLabel(status?: string): string | undefined {
@@ -144,10 +144,8 @@ export function executiveToneAssessment(item?: ProgrammeItem): ExecutiveToneAsse
     };
   }
 
+  const status = normaliseText(item.status);
   const rag = normaliseText(item.ragStatus);
-  const confidence = normaliseText(item.dateConfidence);
-  const confirmedDate = includesAny(confidence, confirmedDateTerms);
-  const uncertainDate = Boolean(includesAny(confidence, uncertainDateTerms) || (!confirmedDate && confidence.includes("target")));
   const evidence = [
     planStatusLabel(item.status) ? { label: "Plan status", value: planStatusLabel(item.status)! } : undefined,
     meaningfulText(item.ragStatus) ? { label: "Plan RAG", value: meaningfulText(item.ragStatus)! } : undefined,
@@ -162,41 +160,32 @@ export function executiveToneAssessment(item?: ProgrammeItem): ExecutiveToneAsse
   let tone: ExecutiveTone = "grey";
   const reasons: string[] = [];
 
-  if (rag.includes("red")) {
-    tone = "red";
-    reasons.push("Source RAG is Red");
-  } else if (item.status === "blocked") {
+  if (status.includes("blocked")) {
     tone = "red";
     reasons.push("Project status is blocked");
-  } else if (item.status === "complete") {
-    tone = "green";
-    reasons.push("Project status is complete");
-  } else if (item.status === "late" || (item.delayDays && item.delayDays > 10)) {
+  } else if (status.includes("late")) {
     tone = "red";
     reasons.push(item.delayDays && item.delayDays > 0 ? `Project plan shows ${item.delayDays} calendar days delay against baseline` : "Project status is late");
-  } else if (item.status === "at-risk" || (item.delayDays && item.delayDays > 0)) {
+  } else if (status.includes("complete") || status.includes("closed") || status.includes("done")) {
+    tone = "green";
+    reasons.push("Project status is complete");
+  } else if (status.includes("at risk") || status.includes("at-risk")) {
     tone = "amber";
-    reasons.push(item.delayDays && item.delayDays > 0 ? `Project plan shows ${item.delayDays} calendar days delay against baseline` : "Project status is at risk");
+    reasons.push("Project status is at risk");
   } else if (item.dateAssumption) {
     tone = "amber";
     reasons.push("Date assumption is flagged as Yes");
-  } else if (rag.includes("amber")) {
-    tone = "amber";
-    reasons.push("Source RAG is Amber");
-  } else if (item.dateAssumption === undefined && uncertainDate) {
-    tone = "amber";
-    reasons.push(item.dateConfidence ? `Date confidence is "${item.dateConfidence}"` : "The forecast date is not confirmed");
-  } else if (rag.includes("green")) {
-    tone = "green";
-    reasons.push("Source RAG is Green");
-  } else if (confirmedDate) {
-    tone = "green";
-    reasons.push(item.dateConfidence ? `Date confidence is "${item.dateConfidence}"` : "Date confidence is confirmed");
+  } else if (status.includes("progress")) {
+    tone = "blue";
+    reasons.push("Project status is in progress");
+  } else if (status.includes("not started") || status.includes("future") || status.includes("planned")) {
+    tone = "blue";
+    reasons.push(`Project status is ${item.status}`);
   } else if (item.finishDate) {
     tone = "blue";
-    reasons.push("A forecast finish date is captured and no RAG concern is flagged");
+    reasons.push("A forecast finish date is captured");
   } else {
-    reasons.push("No RAG status or date confidence is captured");
+    reasons.push("No Project plan status or forecast finish date is captured");
   }
 
   if (item.decisionRequired) reasons.push("Decision gate is flagged in the Project plan");
