@@ -1,7 +1,6 @@
 import type { jsPDF as JsPDF } from "jspdf";
 import type { ProgrammeItem, ProgrammeSchedule } from "../types/programme";
 import type { TrackerData, WeeklyStatusCuration, WeeklySummary } from "../types/reporting";
-import type { TeamActionPdfItem } from "./exportTeamActionsPdf";
 import { buildExecutiveRoadmapModel, executiveToneAssessment, executiveToneLabel } from "./executiveRoadmapData";
 import { formatDate, parseDate } from "./dateUtils";
 
@@ -9,11 +8,6 @@ type DateWindow = {
   start?: Date;
   end?: Date;
   label: string;
-};
-
-type OwnerPack = {
-  ownerName: string;
-  items: TeamActionPdfItem[];
 };
 
 type ExportWeeklyDistributionPackOptions = {
@@ -24,7 +18,6 @@ type ExportWeeklyDistributionPackOptions = {
   contextItemUids?: string[];
   removedItemUids?: string[];
   laneOrderUids?: string[];
-  ownerPacks: OwnerPack[];
 };
 
 type Rgb = [number, number, number];
@@ -421,53 +414,6 @@ function table(
   return ((doc as JsPDF & { lastAutoTable?: { finalY?: number } }).lastAutoTable?.finalY ?? y) + 8;
 }
 
-function activeAttentionItem(item: TeamActionPdfItem): boolean {
-  const status = item.displayStatus ?? item.status;
-  const due = parseDate(item.dueDate);
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  const soon = new Date(today);
-  soon.setDate(soon.getDate() + 14);
-  return isOpenStatus(status) && (normaliseText(status).includes("blocked") || normaliseText(status).includes("overdue") || Boolean(due && due <= soon));
-}
-
-function actionSort(a: TeamActionPdfItem, b: TeamActionPdfItem): number {
-  const attentionDelta = Number(activeAttentionItem(b)) - Number(activeAttentionItem(a));
-  if (attentionDelta) return attentionDelta;
-  return bySoonest(a.dueDate, b.dueDate) || a.title.localeCompare(b.title);
-}
-
-function addActionPackPage(doc: JsPDF, autoTable: AutoTable, schedule: ProgrammeSchedule, reportDate: string, dateWindow: DateWindow, pack: OwnerPack) {
-  addHeader(doc, weeklyProgrammeTitle(schedule.title), `${pack.ownerName} action pack`, reportDate);
-  let y = sectionTitle(doc, pack.ownerName, 36);
-  const activeItems = pack.items.filter((item) => isOpenStatus(item.displayStatus ?? item.status)).sort(actionSort);
-  const dueSoon = activeItems.filter(activeAttentionItem);
-  const upcoming = activeItems.filter((item) => !activeAttentionItem(item));
-  const summary = `${dueSoon.length} due soon / attention items. ${upcoming.length} upcoming items.`;
-  y += addTextBox(doc, "Action summary", summary, 12, y, doc.internal.pageSize.getWidth() - 24, 22) + 6;
-  y = table(
-    doc,
-    autoTable,
-    y,
-    ["Due", "Status", "Action / task / milestone", "Source", "Notes"],
-    dueSoon.length
-      ? dueSoon.map((item) => [formatDate(item.dueDate), item.displayStatus ?? item.status ?? "Open", item.title, item.source, item.latestUpdate || item.description || ""])
-      : [["-", "-", "Nothing due soon, overdue or blocked.", "-", ""]],
-    { 0: { cellWidth: 22, fontStyle: "bold" }, 1: { cellWidth: 24, fontStyle: "bold" }, 2: { cellWidth: 62, fontStyle: "bold" }, 3: { cellWidth: 28 }, 4: { cellWidth: 48 } },
-    colours.amber,
-  );
-  table(
-    doc,
-    autoTable,
-    y,
-    ["Due", "Status", "Action / task / milestone", "Source", "Notes"],
-    upcoming.length
-      ? upcoming.map((item) => [formatDate(item.dueDate), item.displayStatus ?? item.status ?? "Open", item.title, item.source, item.latestUpdate || item.description || ""])
-      : [["-", "-", "No later upcoming assigned work found.", "-", ""]],
-    { 0: { cellWidth: 22, fontStyle: "bold" }, 1: { cellWidth: 24 }, 2: { cellWidth: 62, fontStyle: "bold" }, 3: { cellWidth: 28 }, 4: { cellWidth: 48 } },
-  );
-}
-
 export async function exportWeeklyDistributionPackPdf({
   schedule,
   tracker,
@@ -476,7 +422,6 @@ export async function exportWeeklyDistributionPackPdf({
   contextItemUids,
   removedItemUids,
   laneOrderUids,
-  ownerPacks,
 }: ExportWeeklyDistributionPackOptions) {
   const [{ default: jsPDF }, { default: autoTable }] = await Promise.all([import("jspdf"), import("jspdf-autotable")]);
   const doc = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
@@ -532,7 +477,7 @@ export async function exportWeeklyDistributionPackPdf({
       `Forecast to go live: ${forecastToGoLiveLabel(schedule)}.`,
       `Next milestone: ${nextMilestone ? `${formatDate(nextMilestone.finishDate)} - ${nextMilestone.name}` : "None in selected window"}.`,
       `Main blocker: ${mainBlocker}.`,
-      "Pack contents: weekly status, visual executive roadmap, and per-person action packs.",
+      "Pack contents: weekly status and visual executive roadmap. Team action packs are generated separately from the Team Action Tracker.",
     ],
     12,
     y,
@@ -547,7 +492,6 @@ export async function exportWeeklyDistributionPackPdf({
     [
       ["Weekly executive status", "RAG, status summary, forecast, progress, next focus and changes."],
       ["Executive roadmap", "Visual lane view of high-level milestones and their key predecessor/enabler path."],
-      ["Team action packs", "One action section per owner, with due soon / attention items first."],
     ],
     { 0: { cellWidth: 48, fontStyle: "bold" }, 1: { cellWidth: 136 } },
   );
@@ -569,21 +513,6 @@ export async function exportWeeklyDistributionPackPdf({
   addTextBox(doc, "What changed this week", whatChangedItems.length ? whatChangedItems : ["No material changes captured in the latest weekly row."], left, y, pageWidth - 24, 30);
 
   addExecutiveRoadmapVisualPages(doc, schedule, reportDate, model);
-
-  const sortedPacks = ownerPacks
-    .filter((pack) => pack.items.some((item) => isOpenStatus(item.displayStatus ?? item.status)))
-    .sort((a, b) => a.ownerName.localeCompare(b.ownerName));
-  if (sortedPacks.length) {
-    sortedPacks.forEach((pack) => {
-      doc.addPage("a4", "portrait");
-      addActionPackPage(doc, tablePlugin, schedule, reportDate, dateWindow, pack);
-    });
-  } else {
-    doc.addPage("a4", "portrait");
-    addHeader(doc, title, "Team action packs", reportDate);
-    y = sectionTitle(doc, "Team action packs", 36);
-    addTextBox(doc, "No active assigned actions", "No open assigned meeting actions or Project plan tasks were found in the imported sources.", 12, y, pageWidth - 24, 28);
-  }
 
   addFooter(doc);
   doc.save(`${fileSlug(schedule.title)}-weekly-distribution-pack.pdf`);

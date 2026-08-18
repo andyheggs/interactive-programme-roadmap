@@ -2809,12 +2809,22 @@ function TeamActionTrackerView({
   const [source, setSource] = useState("all");
   const [stream, setStream] = useState("all");
   const [search, setSearch] = useState("");
+  const [selectedPackOwners, setSelectedPackOwners] = useState<string[]>([]);
   const allItems = combineTeamWorkItems(schedule, tracker);
   const meetingActions = allItems.filter((item) => item.source === "Meeting action");
   const lastMeetingDate = latestMeetingActionDate(allItems);
   const lastMeetingActions = lastMeetingDate ? meetingActions.filter((item) => sameCalendarDate(item.meetingDate ?? item.loggedDate, lastMeetingDate)) : [];
   const actionPacks = buildTeamActionPacks(allItems);
   const owners = uniqueSorted(allItems.flatMap((item) => ownerNames(item.owner)).filter((value) => value !== "Unassigned"));
+  const ownerKey = owners.join("|");
+  useEffect(() => {
+    setSelectedPackOwners((current) => {
+      if (!owners.length) return [];
+      const valid = current.filter((name) => owners.includes(name));
+      return valid.length ? valid : owners;
+    });
+  }, [ownerKey]);
+  const selectedActionPacks = actionPacks.filter((pack) => selectedPackOwners.includes(pack.ownerName));
   const streams = uniqueSorted(allItems.map((item) => item.stream));
   const sources = uniqueSorted(allItems.map((item) => item.source));
   const filtered = allItems
@@ -2845,6 +2855,9 @@ function TeamActionTrackerView({
   };
   const toggleStatusFilter = (key: TeamStatusFilter) => {
     setStatusFilters((current) => current.includes(key) ? current.filter((item) => item !== key) : [...current, key]);
+  };
+  const togglePackOwner = (name: string) => {
+    setSelectedPackOwners((current) => current.includes(name) ? current.filter((item) => item !== name) : [...current, name]);
   };
 
   return (
@@ -2955,13 +2968,37 @@ function TeamActionTrackerView({
             <div>
               <span className="snapshot-eyebrow">Team Action Tracker</span>
               <h2>Person action packs</h2>
-              <p>Automatically groups open meeting actions and assigned Project plan tasks by person, with due soon / attention items first and upcoming work beneath.</p>
+              <p>Automatically groups open meeting actions and assigned Project plan tasks by person. Choose who should be included in the bundled team pack.</p>
             </div>
-            <button className="download-action" type="button" onClick={() => onExportPdf(actionPacks.flatMap((pack) => pack.items), { ownerPacks: actionPacks })} disabled={!actionPacks.length}>
+            <button className="download-action" type="button" onClick={() => onExportPdf(selectedActionPacks.flatMap((pack) => pack.items), { ownerPacks: selectedActionPacks })} disabled={!selectedActionPacks.length}>
               <Download size={15} />
-              Download everyone A4 pack
+              Download selected A4 pack
             </button>
           </div>
+          {actionPacks.length ? (
+            <div className="team-pack-selector" aria-label="Choose people for the bundled team action pack">
+              <div className="team-pack-selector-header">
+                <strong>{selectedActionPacks.length} of {actionPacks.length} people selected</strong>
+                <span>
+                  <button type="button" onClick={() => setSelectedPackOwners(actionPacks.map((pack) => pack.ownerName))}>Select all</button>
+                  <button type="button" onClick={() => setSelectedPackOwners([])}>Clear</button>
+                </span>
+              </div>
+              <div className="team-pack-owner-list">
+                {actionPacks.map((pack) => (
+                  <label key={pack.ownerName} className={selectedPackOwners.includes(pack.ownerName) ? "selected" : ""}>
+                    <input
+                      type="checkbox"
+                      checked={selectedPackOwners.includes(pack.ownerName)}
+                      onChange={() => togglePackOwner(pack.ownerName)}
+                    />
+                    <span>{pack.ownerName}</span>
+                    <small>{pack.items.length} active</small>
+                  </label>
+                ))}
+              </div>
+            </div>
+          ) : null}
           <div className="team-action-pack-grid">
             {actionPacks.map((pack) => (
               <article className="team-action-pack-card" key={pack.ownerName}>
@@ -3129,7 +3166,7 @@ function DownloadsHub({
   const downloads = [
     {
       title: "Weekly distribution pack",
-      meta: "One PDF containing the email-ready summary, weekly status, executive roadmap summary and per-person action packs.",
+      meta: "One PDF containing the email-ready summary, weekly status and visual executive roadmap. Team actions are packaged separately.",
       action: "Download Pack",
       onClick: onExportWeeklyDistributionPack,
     },
@@ -3596,12 +3633,6 @@ function App() {
 
   async function exportWeeklyDistributionPack() {
     setError(undefined);
-    const allTeamItems = combineTeamWorkItems(schedule, tracker);
-    const packs = buildTeamActionPacks(allTeamItems);
-    const toPdfItem = (item: TeamWorkItem) => ({
-      ...item,
-      displayStatus: statusLabel(item),
-    });
     try {
       await exportWeeklyDistributionPackPdf({
         schedule,
@@ -3611,10 +3642,6 @@ function App() {
         contextItemUids: executiveContextUids,
         removedItemUids: executiveRemovedUids,
         laneOrderUids: executiveLaneOrderUids,
-        ownerPacks: packs.map((pack) => ({
-          ownerName: pack.ownerName,
-          items: pack.items.map(toPdfItem),
-        })),
       });
     } catch (err) {
       setError(err instanceof Error ? err.message : "The Weekly Distribution Pack PDF could not be generated.");

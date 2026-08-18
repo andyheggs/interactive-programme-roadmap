@@ -2384,6 +2384,67 @@ body.executive-export-light .executive-roadmap {
   color: var(--muted);
   line-height: 1.4;
 }
+.team-pack-selector {
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid var(--border-soft);
+  border-radius: 8px;
+  background: var(--surface-strong);
+}
+.team-pack-selector-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: center;
+  color: var(--text-strong);
+}
+.team-pack-selector-header span {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.team-pack-selector button {
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 6px 10px;
+  color: var(--text-strong);
+  background: var(--surface);
+  font-size: 0.78rem;
+  font-weight: 900;
+  cursor: pointer;
+}
+.team-pack-owner-list {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.team-pack-owner-list label {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  color: var(--muted);
+  background: var(--surface);
+  font-size: 0.82rem;
+  font-weight: 900;
+  cursor: pointer;
+}
+.team-pack-owner-list label.selected {
+  border-color: rgba(121, 201, 173, 0.72);
+  color: var(--text-strong);
+  background: rgba(121, 201, 173, 0.16);
+}
+.team-pack-owner-list input {
+  margin: 0;
+}
+.team-pack-owner-list small {
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 800;
+}
 .team-action-pack-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));

@@ -54,7 +54,7 @@ function excelDate(value: unknown): string | undefined {
     }
   }
   const date = new Date(text);
-  return Number.isNaN(date.getTime()) ? text : date.toISOString();
+  return Number.isNaN(date.getTime()) ? undefined : date.toISOString();
 }
 
 function yesNo(value: unknown): boolean {
@@ -76,7 +76,12 @@ function makeRows(workbook: XLSX.WorkBook, sheetName: string): Row[] {
   return values.slice(headerRowIndex + 1).map((row) => {
     const record: Row = {};
     headers.forEach((header, index) => {
-      if (header) record[header] = row[index];
+      if (!header) return;
+      const incoming = row[index];
+      const existing = record[header];
+      const hasIncoming = incoming !== undefined && incoming !== null && String(incoming).trim() !== "";
+      const hasExisting = existing !== undefined && existing !== null && String(existing).trim() !== "";
+      if (!hasExisting || hasIncoming) record[header] = incoming;
     });
     return record;
   });
@@ -180,15 +185,15 @@ export async function parseMeetingTracker(file: File): Promise<TrackerData> {
   const actions: TrackerAction[] = makeRows(workbook, "Actions")
     .map((row) => ({
       id: rowValue(row, "Action ID") ?? "",
-      meetingDate: rowDate(row, "Meeting date", "Meeting/Log date", "Log date"),
+      meetingDate: rowDate(row, "Meeting date", "Meeting/Log date", "Log date", "Logged date", "Date logged", "Action logged date"),
       dashboardFlag: rowFlag(row, "Dashboard Tag", "Dashboard Flag"),
       stream: rowValue(row, "Workstream"),
-      title: rowValue(row, "Action title") ?? "",
-      description: rowValue(row, "Task description"),
+      title: rowValue(row, "Action title", "Action", "Task", "Task title") ?? "",
+      description: rowValue(row, "Task description", "Action description", "Description"),
       status: rowValue(row, "Status"),
-      owner: rowValue(row, "Owner"),
+      owner: rowValue(row, "Owner", "Assigned to", "Action owner"),
       priority: rowValue(row, "Priority"),
-      dueDate: rowDate(row, "Due date", "Target date"),
+      dueDate: rowDate(row, "Due date", "Due Date", "Action due date", "Date due", "Target date", "Target completion date"),
       completionDate: rowDate(row, "Completion date", "Completed date", "Date completed", "Closed date"),
       updateType: rowValue(row, "Update type"),
       latestUpdate: rowValue(row, "Latest update"),
