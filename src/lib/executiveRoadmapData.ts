@@ -53,36 +53,16 @@ export const executiveToneLabels: Record<ExecutiveTone, string> = {
 
 export function executiveToneLabel(item?: ProgrammeItem): string {
   const assessment = executiveToneAssessment(item);
-  if (item?.status === "blocked" && assessment.tone === "red") return "BLOCKED";
-  if ((item?.status === "late" || Boolean(item?.delayDays && item.delayDays > 10)) && assessment.tone === "red") return "LATE";
-  if ((item?.status === "at-risk" || Boolean(item?.delayDays && item.delayDays > 0)) && assessment.tone === "amber") return "AT RISK";
+  const rag = normaliseText(item?.ragStatus);
+  if (rag.includes("red") && assessment.tone === "red") return "RED";
   if (item?.dateAssumption && assessment.tone === "amber") return "DATE ASSUMPTION";
+  if (rag.includes("amber") && assessment.tone === "amber") return "AMBER";
+  if (rag.includes("green") && assessment.tone === "green") return "GREEN";
+  if (normaliseText(item?.status).includes("blocked") && assessment.tone === "red") return "BLOCKED";
+  if (normaliseText(item?.status).includes("late") && assessment.tone === "red") return "LATE";
+  if (normaliseText(item?.status).includes("at risk") && assessment.tone === "amber") return "AT RISK";
   return executiveToneLabels[assessment.tone];
 }
-
-const uncertainDateTerms = [
-  "medium",
-  "low",
-  "tbc",
-  "unconfirmed",
-  "assumption",
-  "not yet confirmed",
-  "unknown",
-  "subject to",
-  "dependent on",
-  "supplier implementation",
-  "supplier plan",
-];
-
-const confirmedDateTerms = [
-  "actual",
-  "confirmed",
-  "credible",
-  "high",
-  "statutory",
-  "fixed",
-  "agreed",
-];
 
 export function normaliseText(value?: string): string {
   return (value ?? "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
@@ -113,17 +93,13 @@ export function bySoonest(a?: string, b?: string): number {
   return (parseDate(a)?.getTime() ?? Number.MAX_SAFE_INTEGER) - (parseDate(b)?.getTime() ?? Number.MAX_SAFE_INTEGER);
 }
 
-function includesAny(value: string, terms: string[]): boolean {
-  return terms.some((term) => value.includes(term));
-}
-
 function summariseAssessment(tone: ExecutiveTone, reasons: string[]): string {
   const firstReason = reasons[0]?.replace(/\.$/, "");
-  if (tone === "amber") return firstReason ? `Amber because ${firstReason.toLowerCase()}.` : "Amber because the date or delivery position is uncertain.";
-  if (tone === "red") return firstReason ? `Red because ${firstReason.toLowerCase()}.` : "Red because the Project plan status is late or blocked.";
-  if (tone === "green") return firstReason ? `Green because ${firstReason.toLowerCase()}.` : "Green because the Project plan status is complete.";
-  if (tone === "blue") return firstReason ? `Planned because ${firstReason.toLowerCase()}.` : "Planned because the Project plan status is still active and no date assumption is flagged.";
-  return firstReason ? `Not assessed because ${firstReason.toLowerCase()}.` : "Not assessed because no Project plan status is captured.";
+  if (tone === "amber") return firstReason ? `Amber because ${firstReason.toLowerCase()}.` : "Amber because RAG is Amber or the date is an assumption.";
+  if (tone === "red") return firstReason ? `Red because ${firstReason.toLowerCase()}.` : "Red because current RAG is Red, or status fallback is blocked/late.";
+  if (tone === "green") return firstReason ? `Green because ${firstReason.toLowerCase()}.` : "Green because current RAG is Green, or status fallback is complete.";
+  if (tone === "blue") return firstReason ? `Planned because ${firstReason.toLowerCase()}.` : "Planned because no RAG or assumption concern is flagged.";
+  return firstReason ? `Not assessed because ${firstReason.toLowerCase()}.` : "Not assessed because no RAG, date assumption or fallback status is captured.";
 }
 
 function planStatusLabel(status?: string): string | undefined {
@@ -160,32 +136,41 @@ export function executiveToneAssessment(item?: ProgrammeItem): ExecutiveToneAsse
   let tone: ExecutiveTone = "grey";
   const reasons: string[] = [];
 
-  if (status.includes("blocked")) {
+  if (rag.includes("red")) {
     tone = "red";
-    reasons.push("Project status is blocked");
-  } else if (status.includes("late")) {
-    tone = "red";
-    reasons.push(item.delayDays && item.delayDays > 0 ? `Project plan shows ${item.delayDays} calendar days delay against baseline` : "Project status is late");
-  } else if (status.includes("complete") || status.includes("closed") || status.includes("done")) {
-    tone = "green";
-    reasons.push("Project status is complete");
-  } else if (status.includes("at risk") || status.includes("at-risk")) {
-    tone = "amber";
-    reasons.push("Project status is at risk");
+    reasons.push("Current milestone RAG is Red");
   } else if (item.dateAssumption) {
     tone = "amber";
     reasons.push("Date assumption is flagged as Yes");
+  } else if (rag.includes("amber")) {
+    tone = "amber";
+    reasons.push("Current milestone RAG is Amber");
+  } else if (rag.includes("green")) {
+    tone = "green";
+    reasons.push("Current milestone RAG is Green");
+  } else if (status.includes("blocked")) {
+    tone = "red";
+    reasons.push("No milestone RAG is captured; Project status fallback is blocked");
+  } else if (status.includes("late")) {
+    tone = "red";
+    reasons.push(item.delayDays && item.delayDays > 0 ? `No milestone RAG is captured; Project plan shows ${item.delayDays} calendar days delay against baseline` : "No milestone RAG is captured; Project status fallback is late");
+  } else if (status.includes("complete") || status.includes("closed") || status.includes("done")) {
+    tone = "green";
+    reasons.push("No milestone RAG is captured; Project status fallback is complete");
+  } else if (status.includes("at risk") || status.includes("at-risk")) {
+    tone = "amber";
+    reasons.push("No milestone RAG is captured; Project status fallback is at risk");
   } else if (status.includes("progress")) {
     tone = "blue";
-    reasons.push("Project status is in progress");
+    reasons.push("No milestone RAG is captured; Project status fallback is in progress");
   } else if (status.includes("not started") || status.includes("future") || status.includes("planned")) {
     tone = "blue";
-    reasons.push(`Project status is ${item.status}`);
+    reasons.push(`No milestone RAG is captured; Project status fallback is ${item.status}`);
   } else if (item.finishDate) {
     tone = "blue";
-    reasons.push("A forecast finish date is captured");
+    reasons.push("A forecast finish date is captured and no RAG or assumption concern is flagged");
   } else {
-    reasons.push("No Project plan status or forecast finish date is captured");
+    reasons.push("No RAG, date assumption, Project status or forecast finish date is captured");
   }
 
   if (item.decisionRequired) reasons.push("Decision gate is flagged in the Project plan");
