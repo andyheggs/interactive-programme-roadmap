@@ -1,6 +1,6 @@
 import type { ProgrammeItem, ProgrammeSchedule } from "../types/programme";
 import type { TrackerData } from "../types/reporting";
-import { parseDate } from "./dateUtils";
+import { formatDate, parseDate } from "./dateUtils";
 
 export type DateWindow = {
   start?: Date;
@@ -53,6 +53,9 @@ export const executiveToneLabels: Record<ExecutiveTone, string> = {
 
 export function executiveToneLabel(item?: ProgrammeItem): string {
   const assessment = executiveToneAssessment(item);
+  if (item?.status === "blocked" && assessment.tone === "red") return "BLOCKED";
+  if ((item?.status === "late" || Boolean(item?.delayDays && item.delayDays > 10)) && assessment.tone === "red") return "LATE";
+  if ((item?.status === "at-risk" || Boolean(item?.delayDays && item.delayDays > 0)) && assessment.tone === "amber") return "AT RISK";
   if (item?.dateAssumption && assessment.tone === "amber") return "DATE ASSUMPTION";
   return executiveToneLabels[assessment.tone];
 }
@@ -117,10 +120,18 @@ function includesAny(value: string, terms: string[]): boolean {
 function summariseAssessment(tone: ExecutiveTone, reasons: string[]): string {
   const firstReason = reasons[0]?.replace(/\.$/, "");
   if (tone === "amber") return firstReason ? `Amber because ${firstReason.toLowerCase()}.` : "Amber because the date or delivery position is uncertain.";
-  if (tone === "red") return firstReason ? `Red because ${firstReason.toLowerCase()}.` : "Red because the item is blocked, overdue or reported Red.";
+  if (tone === "red") return firstReason ? `Red because ${firstReason.toLowerCase()}.` : "Red because the item is blocked, late, overdue or reported Red.";
   if (tone === "green") return firstReason ? `Green because ${firstReason.toLowerCase()}.` : "Green because the item is complete, confirmed or reported Green.";
   if (tone === "blue") return firstReason ? `Planned because ${firstReason.toLowerCase()}.` : "Planned because it has a dated forecast but no RAG concern.";
   return firstReason ? `Not assessed because ${firstReason.toLowerCase()}.` : "Not assessed because no RAG or date confidence is captured.";
+}
+
+function planStatusLabel(status?: string): string | undefined {
+  if (!status) return undefined;
+  return status
+    .split("-")
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ");
 }
 
 export function executiveToneAssessment(item?: ProgrammeItem): ExecutiveToneAssessment {
@@ -138,7 +149,10 @@ export function executiveToneAssessment(item?: ProgrammeItem): ExecutiveToneAsse
   const confirmedDate = includesAny(confidence, confirmedDateTerms);
   const uncertainDate = Boolean(includesAny(confidence, uncertainDateTerms) || (!confirmedDate && confidence.includes("target")));
   const evidence = [
+    planStatusLabel(item.status) ? { label: "Plan status", value: planStatusLabel(item.status)! } : undefined,
     meaningfulText(item.ragStatus) ? { label: "Plan RAG", value: meaningfulText(item.ragStatus)! } : undefined,
+    item.baselineFinish ? { label: "Baseline finish", value: formatDate(item.baselineFinish) } : undefined,
+    item.delayDays && item.delayDays > 0 ? { label: "Delay against baseline", value: `${item.delayDays} calendar days` } : undefined,
     item.dateAssumption !== undefined ? { label: "Date assumption", value: item.dateAssumption ? "Yes" : "No" } : undefined,
     meaningfulText(item.dateConfidence) ? { label: "Date confidence", value: meaningfulText(item.dateConfidence)! } : undefined,
     item.externalDependency ? { label: "External dependency", value: "Yes" } : undefined,
@@ -157,6 +171,12 @@ export function executiveToneAssessment(item?: ProgrammeItem): ExecutiveToneAsse
   } else if (item.status === "complete") {
     tone = "green";
     reasons.push("Project status is complete");
+  } else if (item.status === "late" || (item.delayDays && item.delayDays > 10)) {
+    tone = "red";
+    reasons.push(item.delayDays && item.delayDays > 0 ? `Project plan shows ${item.delayDays} calendar days delay against baseline` : "Project status is late");
+  } else if (item.status === "at-risk" || (item.delayDays && item.delayDays > 0)) {
+    tone = "amber";
+    reasons.push(item.delayDays && item.delayDays > 0 ? `Project plan shows ${item.delayDays} calendar days delay against baseline` : "Project status is at risk");
   } else if (item.dateAssumption) {
     tone = "amber";
     reasons.push("Date assumption is flagged as Yes");

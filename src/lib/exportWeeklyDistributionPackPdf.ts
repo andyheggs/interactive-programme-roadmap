@@ -266,7 +266,7 @@ function drawRoadmapLegend(doc: JsPDF, x: number, y: number, w: number): number 
     { tone: "green", label: "Complete / confirmed" },
     { tone: "blue", label: "Planned / dated" },
     { tone: "amber", label: "Date assumption / Amber" },
-    { tone: "red", label: "Blocked / Red" },
+    { tone: "red", label: "Blocked / late" },
     { tone: "grey", label: "Not assessed" },
   ];
   setRgbDraw(doc, colours.line);

@@ -647,6 +647,17 @@ function statusLabel(item: TeamWorkItem): string {
   return item.status ?? "Not set";
 }
 
+function milestonePlanStatusLabel(item: ProgrammeItem): string {
+  if (item.status === "complete") return "Completed";
+  if (item.status === "blocked") return "Blocked";
+  if (item.status === "late") return item.delayDays && item.delayDays > 0 ? `Late +${item.delayDays}d` : "Late";
+  if (item.status === "at-risk") return item.delayDays && item.delayDays > 0 ? `At risk +${item.delayDays}d` : "At risk";
+  if (item.status === "in-progress") return "In progress";
+  if (item.status === "not-started") return "Not started";
+  if (item.status === "future") return "Future";
+  return item.status;
+}
+
 function ownerNames(owner?: string): string[] {
   const names = (owner ?? "")
     .split(/[\/,;&]+/)
@@ -1601,7 +1612,7 @@ function ExecutiveSnapshotView({
             <span><i className="legend-dot green" /> Complete / confirmed</span>
             <span><i className="legend-dot blue" /> Planned / dated</span>
             <span><i className="legend-dot amber" /> Date assumption / not confirmed</span>
-            <span><i className="legend-dot red" /> Blocked / overdue</span>
+            <span><i className="legend-dot red" /> Blocked / late</span>
             <span><i className="legend-dot grey" /> Not assessed</span>
             <span><i className="legend-dot executive" /> Executive dependency</span>
           </div>
@@ -2253,7 +2264,7 @@ function WeeklyExecutiveStatusView({
                     <span>{formatDate(item.finishDate)}</span>
                     <strong>{item.name}</strong>
                     <em>{item.stream ?? item.milestoneLevel ?? "Milestone"}</em>
-                    {isDeliveredItem(item) ? <mark>Completed</mark> : null}
+                    <mark className={`milestone-status ${item.status}`}>{milestonePlanStatusLabel(item)}</mark>
                   </div>
                   {renderControls("milestones", item.uid, visibleIds)}
                 </div>

@@ -135,7 +135,7 @@ function drawLegend(doc: JsPDF, x: number, y: number, w: number): number {
     { tone: "green", label: "Complete / confirmed" },
     { tone: "blue", label: "Planned / dated" },
     { tone: "amber", label: "Date assumption / not confirmed" },
-    { tone: "red", label: "Blocked / overdue" },
+    { tone: "red", label: "Blocked / late" },
     { tone: "grey", label: "Not assessed" },
   ];
   setDraw(doc, colours.line);
@@ -414,7 +414,7 @@ export function exportExecutiveRoadmapHtml(schedule: ProgrammeSchedule, tracker:
       <span class="green"><i></i>Complete / confirmed</span>
       <span class="blue"><i></i>Planned / dated</span>
       <span class="amber"><i></i>Date assumption / not confirmed</span>
-      <span class="red"><i></i>Blocked / overdue</span>
+      <span class="red"><i></i>Blocked / late</span>
       <span class="grey"><i></i>Not assessed</span>
       <p>Orange means Date Assumption is Yes or the source RAG is Amber. Decision and dependency flags are shown as detail evidence.</p>
     </section>

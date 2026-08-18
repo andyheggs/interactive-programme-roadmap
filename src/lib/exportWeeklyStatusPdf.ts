@@ -131,6 +131,17 @@ function isCompleteStatus(status?: string): boolean {
   return ["complete", "completed", "closed", "done", "resolved", "implemented"].includes(normaliseText(status));
 }
 
+function milestonePlanStatusLabel(item: ProgrammeItem): string {
+  if (item.status === "complete") return "Completed";
+  if (item.status === "blocked") return "Blocked";
+  if (item.status === "late") return item.delayDays && item.delayDays > 0 ? `Late +${item.delayDays}d` : "Late";
+  if (item.status === "at-risk") return item.delayDays && item.delayDays > 0 ? `At risk +${item.delayDays}d` : "At risk";
+  if (item.status === "in-progress") return "In progress";
+  if (item.status === "not-started") return "Not started";
+  if (item.status === "future") return "Future";
+  return item.status;
+}
+
 function itemImportance(item: ProgrammeItem): number {
   const level = normaliseText(item.milestoneLevel);
   if (item.executiveMilestone || level.includes("executive")) return 5;
@@ -538,7 +549,7 @@ export async function exportWeeklyStatusPdf({ schedule, tracker, dateWindow, cur
     "Upcoming milestones",
     y,
     ["Date", "Milestone", "Stream", "Status"],
-    upcomingMilestones.map((item) => [formatDate(item.finishDate), item.name, item.stream ?? item.milestoneLevel ?? "-", item.status]),
+    upcomingMilestones.map((item) => [formatDate(item.finishDate), item.name, item.stream ?? item.milestoneLevel ?? "-", milestonePlanStatusLabel(item)]),
   );
   y = ((doc as JsPDF & { lastAutoTable?: { finalY: number } }).lastAutoTable?.finalY ?? y) + 10;
   y = table(
