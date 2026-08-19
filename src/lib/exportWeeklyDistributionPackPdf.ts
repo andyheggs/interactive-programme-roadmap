@@ -270,7 +270,7 @@ function drawRoadmapLegend(doc: JsPDF, x: number, y: number, w: number): number 
   ];
   setRgbDraw(doc, colours.line);
   setRgbFill(doc, colours.pale);
-  doc.roundedRect(x, y, w, 17, 2.5, 2.5, "FD");
+  doc.roundedRect(x, y, w, 12, 2.5, 2.5, "FD");
   doc.setFont("helvetica", "bold");
   doc.setFontSize(7);
   setRgbText(doc, colours.muted);
@@ -285,11 +285,7 @@ function drawRoadmapLegend(doc: JsPDF, x: number, y: number, w: number): number 
     doc.text(item.label, cursor + 5, y + 8);
     cursor += doc.getTextWidth(item.label) + 16;
   });
-  doc.setFont("helvetica", "normal");
-  doc.setFontSize(6.6);
-  setRgbText(doc, colours.muted);
-  doc.text("Lane milestones use Project Status plus Date Assumption. Executive cards retain the executive milestone RAG rule.", x + 4, y + 14);
-  return y + 24;
+  return y + 16;
 }
 
 function drawOutcomeCard(doc: JsPDF, item: ProgrammeItem, x: number, y: number, w: number, h: number) {

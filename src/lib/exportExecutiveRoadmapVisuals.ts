@@ -111,6 +111,20 @@ function addPosterHeader(doc: JsPDF, schedule: ProgrammeSchedule, reportDate: st
   setText(doc, colours.ink);
 }
 
+function addPrintHeader(doc: JsPDF, reportDate: string) {
+  const pageWidth = doc.internal.pageSize.getWidth();
+  setFill(doc, colours.deep);
+  doc.rect(0, 0, pageWidth, 20, "F");
+  setText(doc, colours.white);
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(14);
+  doc.text("Data Asset Foundation - Executive Delivery Roadmap", 12, 9);
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(8);
+  doc.text(`Generated ${formatDate(reportDate)}`, pageWidth - 12, 13, { align: "right" });
+  setText(doc, colours.ink);
+}
+
 function addPosterFooter(doc: JsPDF) {
   const pageWidth = doc.internal.pageSize.getWidth();
   const pageHeight = doc.internal.pageSize.getHeight();
@@ -147,7 +161,7 @@ function drawLegend(doc: JsPDF, x: number, y: number, w: number): number {
   ];
   setDraw(doc, colours.line);
   setFill(doc, colours.pale);
-  doc.roundedRect(x, y, w, 18, 2.5, 2.5, "FD");
+  doc.roundedRect(x, y, w, 12, 2.5, 2.5, "FD");
   doc.setFont("helvetica", "bold");
   doc.setFontSize(7.2);
   setText(doc, colours.muted);
@@ -162,11 +176,7 @@ function drawLegend(doc: JsPDF, x: number, y: number, w: number): number {
     doc.text(item.label, cursor + 5, y + 8);
     cursor += doc.getTextWidth(item.label) + 18;
   });
-  doc.setFont("helvetica", "normal");
-  doc.setFontSize(7);
-  setText(doc, colours.muted);
-  doc.text("Lane milestones use Project Status plus Date Assumption. Executive cards retain the executive milestone RAG rule.", x + 4, y + 15);
-  return y + 24;
+  return y + 16;
 }
 
 function drawMilestoneCard(doc: JsPDF, item: ProgrammeItem, x: number, y: number, w: number, h: number) {
@@ -199,7 +209,7 @@ function drawPathRow(doc: JsPDF, title: string, items: ProgrammeItem[], y: numbe
   const margin = 14;
   const pageWidth = doc.internal.pageSize.getWidth();
   const width = pageWidth - margin * 2;
-  const rowHeight = 34;
+  const rowHeight = 30;
   setDraw(doc, colours.line);
   setFill(doc, colours.pale);
   doc.roundedRect(margin, y, width, rowHeight, 2.5, 2.5, "FD");
@@ -225,15 +235,15 @@ function drawPathRow(doc: JsPDF, title: string, items: ProgrammeItem[], y: numbe
     doc.text(formatDate(item.finishDate).replace(" 20", " "), x, y + 8);
     doc.setFontSize(6.8);
     setText(doc, colours.ink);
-    doc.text(doc.splitTextToSize(item.name, chipWidth).slice(0, 3), x, y + 23);
+    doc.text(doc.splitTextToSize(item.name, chipWidth).slice(0, 2), x, y + 22);
     if (contextUidSet.has(item.uid)) {
       doc.setFont("helvetica", "normal");
       doc.setFontSize(5.8);
       setText(doc, colours.blue);
-      doc.text("Added context", x, y + 32);
+      doc.text("Added context", x, y + 28);
     }
   });
-  return y + rowHeight + 7;
+  return y + rowHeight + 5;
 }
 
 export async function exportExecutiveRoadmapImage(element: HTMLElement, schedule: ProgrammeSchedule) {
@@ -333,20 +343,19 @@ export async function exportExecutiveRoadmapPrintPdf(schedule: ProgrammeSchedule
   const model = buildExecutiveRoadmapModel(schedule, tracker, dateWindow, { contextItemUids, removedItemUids, laneOrderUids });
   const contextUidSet = new Set(contextItemUids);
   const doc = new jsPDF({ orientation: "landscape", unit: "mm", format: "a4" });
-  addPosterHeader(doc, schedule, model.reportDate, "A4 visual roadmap");
+  addPrintHeader(doc, model.reportDate);
   const margin = 12;
   const pageWidth = doc.internal.pageSize.getWidth();
   const pageHeight = doc.internal.pageSize.getHeight();
-  let y = 42;
+  let y = 26;
   y = drawLegend(doc, margin, y, pageWidth - margin * 2);
 
-  const laneHeight = 58;
+  const laneHeight = 35;
   model.paths.forEach((path, index) => {
-    if (index > 0 && y + laneHeight > pageHeight - 16) {
+    if (index > 0 && y + laneHeight > pageHeight - 14) {
       doc.addPage();
-      addPosterHeader(doc, schedule, model.reportDate, "A4 visual roadmap");
-      y = 42;
-      y = drawLegend(doc, margin, y, pageWidth - margin * 2);
+      addPrintHeader(doc, model.reportDate);
+      y = 26;
     }
     y = drawPathRow(doc, path.outcome.name, [...path.dependencies, path.outcome], y, contextUidSet);
   });
