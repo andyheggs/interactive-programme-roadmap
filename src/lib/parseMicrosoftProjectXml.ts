@@ -114,16 +114,37 @@ function buildCustomFieldMap(root: Document): Map<string, keyof ProgrammeItem> {
   return fields;
 }
 
-function statusFor(item: Pick<ProgrammeItem, "percentComplete" | "finishDate" | "isCritical" | "delayDays">, statusDate?: string): ProgrammeStatus {
+function startOfDay(date: Date): Date {
+  const next = new Date(date);
+  next.setHours(0, 0, 0, 0);
+  return next;
+}
+
+function statusFor(item: Pick<ProgrammeItem, "percentComplete" | "startDate" | "finishDate" | "actualFinish">, statusDate?: string): ProgrammeStatus {
   if ((item.percentComplete ?? 0) >= 100) return "complete";
+  if (item.actualFinish) return "complete";
+
   const status = parseDate(statusDate);
+  const start = parseDate(item.startDate);
   const finish = parseDate(item.finishDate);
-  if (item.delayDays && item.delayDays > 10) return "late";
-  if (item.delayDays && item.delayDays > 0) return "at-risk";
-  if (status && finish && finish < status) return "late";
-  if ((item.percentComplete ?? 0) > 0) return "in-progress";
-  if (item.isCritical) return "at-risk";
-  return "not-started";
+  if (!status) return (item.percentComplete ?? 0) > 0 ? "on-schedule" : "future";
+
+  const statusDay = startOfDay(status);
+  const startDay = start ? startOfDay(start) : undefined;
+  const finishDay = finish ? startOfDay(finish) : undefined;
+
+  if (startDay && startDay > statusDay) return "future";
+  if (finishDay && finishDay < statusDay) return "late";
+
+  if (startDay && finishDay) {
+    const totalDays = Math.max(1, Math.round((finishDay.getTime() - startDay.getTime()) / 86_400_000) + 1);
+    const elapsedDays = Math.max(0, Math.min(totalDays, Math.round((statusDay.getTime() - startDay.getTime()) / 86_400_000)));
+    const expectedComplete = (elapsedDays / totalDays) * 100;
+    return (item.percentComplete ?? 0) + 0.1 >= expectedComplete ? "on-schedule" : "late";
+  }
+
+  if ((item.percentComplete ?? 0) > 0) return "on-schedule";
+  return "future";
 }
 
 function buildLookup(root: Document): Map<string, string> {

@@ -1,6 +1,7 @@
 export type ProgrammeStatus =
   | "complete"
   | "in-progress"
+  | "on-schedule"
   | "not-started"
   | "late"
   | "at-risk"

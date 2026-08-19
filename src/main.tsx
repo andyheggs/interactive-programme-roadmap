@@ -655,6 +655,7 @@ function milestonePlanStatusLabel(item: ProgrammeItem): string {
   if (item.status === "late") return item.delayDays && item.delayDays > 0 ? `Late +${item.delayDays}d` : "Late";
   if (item.status === "at-risk") return item.delayDays && item.delayDays > 0 ? `At risk +${item.delayDays}d` : "At risk";
   if (item.status === "in-progress") return "In progress";
+  if (item.status === "on-schedule") return "On schedule";
   if (item.status === "not-started") return "Not started";
   if (item.status === "future") return "Future";
   return item.status;
@@ -864,7 +865,7 @@ function lateMilestones(schedule: ProgrammeSchedule): ProgrammeItem[] {
     .sort((a, b) => (b.delayDays ?? 0) - (a.delayDays ?? 0));
 }
 
-type ExecutiveTone = "green" | "blue" | "purple" | "amber" | "red" | "grey";
+type ExecutiveTone = "green" | "blue" | "teal" | "purple" | "amber" | "red" | "grey";
 
 type ExecutivePath = {
   outcome: ProgrammeItem;
@@ -1648,7 +1649,7 @@ function ExecutiveSnapshotView({
           <div className="exec-legend" aria-label="Roadmap legend">
             <span><i className="legend-dot green" /> Complete</span>
             <span><i className="legend-dot blue" /> Ongoing</span>
-            <span><i className="legend-dot purple" /> Future</span>
+            <span><i className="legend-dot teal" /> Future</span>
             <span><i className="legend-dot amber" /> Date assumption / not confirmed</span>
             <span><i className="legend-dot red" /> Late</span>
             <span><i className="legend-dot executive" /> Executive dependency</span>
@@ -2879,8 +2880,10 @@ function TeamActionTrackerView({
       if (actionScope === "last-meeting-actions") {
         if (item.source !== "Meeting action" || !sameCalendarDate(item.meetingDate ?? item.loggedDate, lastMeetingDate)) return false;
         if (!selectedMeetingActionIds.includes(item.id)) return false;
+        if (!teamStatusMatches(group, statusFilters)) return false;
       } else if (actionScope === "all-meeting-actions") {
         if (item.source !== "Meeting action") return false;
+        if (!teamStatusMatches(group, statusFilters)) return false;
       } else if (actionScope === "project-tasks") {
         if (item.source !== "Project task") return false;
         if (!teamStatusMatches(group, statusFilters)) return false;
@@ -2953,14 +2956,13 @@ function TeamActionTrackerView({
                 type="button"
                 className={statusFilters.includes(key) ? "active" : ""}
                 aria-pressed={statusFilters.includes(key)}
-                disabled={actionScope === "last-meeting-actions" || actionScope === "all-meeting-actions"}
                 onClick={() => toggleStatusFilter(key)}
                 key={key}
               >
                 {label}
               </button>
             ))}
-            <button type="button" className={!statusFilters.length ? "active" : ""} aria-pressed={!statusFilters.length} disabled={actionScope === "last-meeting-actions" || actionScope === "all-meeting-actions"} onClick={() => setStatusFilters([])}>All</button>
+            <button type="button" className={!statusFilters.length ? "active" : ""} aria-pressed={!statusFilters.length} onClick={() => setStatusFilters([])}>All</button>
           </div>
           {actionScope === "last-meeting-actions" ? (
             <div className="team-meeting-action-selector">
@@ -2973,7 +2975,7 @@ function TeamActionTrackerView({
           ) : null}
           {actionScope !== "standard" && actionScope !== "project-tasks" ? (
             <p className="team-scope-note">
-              Showing {actionScope === "last-meeting-actions" ? `meeting actions logged on ${formatDate(lastMeetingDate)}` : "all meeting actions"}; status, source and reporting date filters are bypassed for this quick view.
+              Showing {actionScope === "last-meeting-actions" ? `meeting actions logged on ${formatDate(lastMeetingDate)}` : "all meeting actions"}; status filters still apply inside this quick view.
             </p>
           ) : actionScope === "project-tasks" ? (
             <p className="team-scope-note">

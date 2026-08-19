@@ -8,7 +8,7 @@ export type DateWindow = {
   label: string;
 };
 
-export type ExecutiveTone = "green" | "blue" | "purple" | "amber" | "red" | "grey";
+export type ExecutiveTone = "green" | "blue" | "teal" | "purple" | "amber" | "red" | "grey";
 
 export type ExecutiveRoadmapPath = {
   outcome: ProgrammeItem;
@@ -46,6 +46,7 @@ export type ExecutiveToneAssessment = {
 export const executiveToneLabels: Record<ExecutiveTone, string> = {
   green: "GREEN",
   blue: "PLANNED",
+  teal: "FUTURE",
   purple: "FUTURE",
   amber: "AMBER",
   red: "RED",
@@ -68,6 +69,7 @@ export function executiveToneLabel(item?: ProgrammeItem): string {
 export const regularMilestoneToneLabels: Record<ExecutiveTone, string> = {
   green: "COMPLETE",
   blue: "ONGOING",
+  teal: "FUTURE",
   purple: "FUTURE",
   amber: "DATE ASSUMPTION",
   red: "LATE",
@@ -109,6 +111,7 @@ function summariseAssessment(tone: ExecutiveTone, reasons: string[]): string {
   if (tone === "red") return firstReason ? `Red because ${firstReason.toLowerCase()}.` : "Red because current RAG is Red, or status fallback is blocked/late.";
   if (tone === "green") return firstReason ? `Green because ${firstReason.toLowerCase()}.` : "Green because current RAG is Green, or status fallback is complete.";
   if (tone === "blue") return firstReason ? `Planned because ${firstReason.toLowerCase()}.` : "Planned because no RAG or assumption concern is flagged.";
+  if (tone === "teal") return firstReason ? `Future because ${firstReason.toLowerCase()}.` : "Future because the Project status is future.";
   if (tone === "purple") return firstReason ? `Future because ${firstReason.toLowerCase()}.` : "Future because the Project status is future or planned.";
   return firstReason ? `Not assessed because ${firstReason.toLowerCase()}.` : "Not assessed because no RAG, date assumption or fallback status is captured.";
 }
@@ -200,7 +203,7 @@ export function executiveToneAssessment(item?: ProgrammeItem): ExecutiveToneAsse
 export function regularMilestoneToneAssessment(item?: ProgrammeItem): ExecutiveToneAssessment {
   if (!item) {
     return {
-      tone: "purple",
+      tone: "teal",
       summary: "Future because no project plan item is selected.",
       reasons: ["No project plan item is selected."],
       evidence: [],
@@ -216,7 +219,7 @@ export function regularMilestoneToneAssessment(item?: ProgrammeItem): ExecutiveT
     item.delayDays && item.delayDays > 0 ? { label: "Delay against baseline", value: `${item.delayDays} calendar days` } : undefined,
   ].filter((entry): entry is { label: string; value: string } => Boolean(entry));
 
-  let tone: ExecutiveTone = "purple";
+  let tone: ExecutiveTone = "teal";
   const reasons: string[] = [];
 
   if (item.dateAssumption) {
@@ -232,10 +235,10 @@ export function regularMilestoneToneAssessment(item?: ProgrammeItem): ExecutiveT
     tone = "blue";
     reasons.push(planStatusLabel(item.status) ? `Project Status is ${planStatusLabel(item.status)}` : "Project Status is ongoing");
   } else if (status.includes("future") || status.includes("planned") || status.includes("not started")) {
-    tone = "purple";
+    tone = "teal";
     reasons.push(planStatusLabel(item.status) ? `Project Status is ${planStatusLabel(item.status)}` : "Project Status is future");
   } else {
-    tone = item.finishDate ? "purple" : "blue";
+    tone = item.finishDate ? "teal" : "blue";
     reasons.push(item.finishDate ? "Forecast finish date is captured and no active status is flagged" : "No milestone status is captured");
   }
 

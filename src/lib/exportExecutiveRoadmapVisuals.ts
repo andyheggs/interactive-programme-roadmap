@@ -15,7 +15,7 @@ import {
 
 type Rgb = [number, number, number];
 
-const colours: Record<"ink" | "muted" | "deep" | "line" | "pale" | "green" | "amber" | "red" | "blue" | "purple" | "grey" | "white", Rgb> = {
+const colours: Record<"ink" | "muted" | "deep" | "line" | "pale" | "green" | "amber" | "red" | "blue" | "teal" | "purple" | "grey" | "white", Rgb> = {
   ink: [28, 38, 33],
   muted: [91, 105, 96],
   deep: [33, 76, 67],
@@ -25,6 +25,7 @@ const colours: Record<"ink" | "muted" | "deep" | "line" | "pale" | "green" | "am
   amber: [255, 138, 0],
   red: [179, 58, 50],
   blue: [61, 120, 169],
+  teal: [20, 184, 166],
   purple: [123, 95, 196],
   grey: [126, 140, 132],
   white: [255, 255, 255],
@@ -33,6 +34,7 @@ const colours: Record<"ink" | "muted" | "deep" | "line" | "pale" | "green" | "am
 const toneColours: Record<ExecutiveTone, Rgb> = {
   green: colours.green,
   blue: colours.blue,
+  teal: colours.teal,
   purple: colours.purple,
   amber: colours.amber,
   red: colours.red,
@@ -42,6 +44,7 @@ const toneColours: Record<ExecutiveTone, Rgb> = {
 const toneFills: Record<ExecutiveTone, Rgb> = {
   green: [231, 245, 237],
   blue: [232, 242, 251],
+  teal: [227, 250, 247],
   purple: [240, 236, 255],
   amber: [255, 240, 210],
   red: [255, 231, 229],
@@ -138,7 +141,7 @@ function drawLegend(doc: JsPDF, x: number, y: number, w: number): number {
   const items: Array<{ tone: ExecutiveTone; label: string }> = [
     { tone: "green", label: "Complete" },
     { tone: "blue", label: "Ongoing" },
-    { tone: "purple", label: "Future" },
+    { tone: "teal", label: "Future" },
     { tone: "amber", label: "Date assumption / not confirmed" },
     { tone: "red", label: "Late" },
   ];
@@ -417,7 +420,7 @@ export function exportExecutiveRoadmapHtml(schedule: ProgrammeSchedule, tracker:
     .milestone span, .node span { color: #647269; font-weight: 800; }
     .milestone strong { display: block; margin: 20px 0 10px; font-size: 20px; line-height: 1.35; }
     .milestone em { display: inline-block; width: fit-content; margin-top: auto; padding: 7px 10px; border-radius: 999px; color: white; background: var(--tone); font-style: normal; font-weight: 900; }
-    .green { --tone: #2e7d55; --card-bg: #e7f5ed; } .blue { --tone: #3d78a9; --card-bg: #e8f2fb; } .purple { --tone: #7b5fc4; --card-bg: #f0ecff; } .amber { --tone: #ff8a00; --card-bg: #fff0d2; } .red { --tone: #b33a32; --card-bg: #ffe7e5; } .grey { --tone: #7e8c84; --card-bg: #edf1ef; }
+    .green { --tone: #2e7d55; --card-bg: #e7f5ed; } .blue { --tone: #3d78a9; --card-bg: #e8f2fb; } .teal { --tone: #14b8a6; --card-bg: #e3faf7; } .purple { --tone: #7b5fc4; --card-bg: #f0ecff; } .amber { --tone: #ff8a00; --card-bg: #fff0d2; } .red { --tone: #b33a32; --card-bg: #ffe7e5; } .grey { --tone: #7e8c84; --card-bg: #edf1ef; }
     .path { margin-bottom: 16px; padding: 18px; break-inside: avoid; }
     .path h2 { margin: 0 0 16px; font-size: 20px; }
     .sequence { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(130px, 1fr); gap: 14px; align-items: start; border-top: 4px solid #c7d1cb; padding-top: 14px; overflow-x: auto; }
@@ -448,7 +451,7 @@ export function exportExecutiveRoadmapHtml(schedule: ProgrammeSchedule, tracker:
       <strong>Colour status</strong>
       <span class="green"><i></i>Complete / confirmed</span>
       <span class="blue"><i></i>Ongoing</span>
-      <span class="purple"><i></i>Future</span>
+      <span class="teal"><i></i>Future</span>
       <span class="amber"><i></i>Date assumption / not confirmed</span>
       <span class="red"><i></i>Late</span>
     </section>

@@ -577,6 +577,7 @@ body.executive-export-light .executive-roadmap {
   --exec-muted: #647269;
   --exec-green: #2e7d55;
   --exec-blue: #3d78a9;
+  --exec-teal: #14b8a6;
   --exec-purple: #7b5fc4;
   --exec-amber: #ff8a00;
   --exec-red: #b33a32;
@@ -773,6 +774,7 @@ body.executive-export-light .executive-roadmap {
   --exec-muted: #aeb6c3;
   --exec-green: #197a55;
   --exec-blue: #256da8;
+  --exec-teal: #14b8a6;
   --exec-purple: #8f7ae6;
   --exec-amber: #ff8a00;
   --exec-red: #c43b45;
@@ -795,6 +797,7 @@ body.executive-export-light .executive-roadmap {
   --exec-muted: #647269;
   --exec-green: #2e7d55;
   --exec-blue: #3d78a9;
+  --exec-teal: #14b8a6;
   --exec-purple: #7b5fc4;
   --exec-amber: #ff8a00;
   --exec-red: #b33a32;
@@ -1007,12 +1010,14 @@ body.executive-export-light .executive-roadmap {
 }
 .exec-outcome-summary.green { --tone: #87d695; --card-bg: rgba(25, 122, 85, 0.22); --badge-bg: rgba(25, 122, 85, 0.36); --badge-text: #9de6ad; }
 .exec-outcome-summary.blue { --tone: #87bdf5; --card-bg: rgba(37, 109, 168, 0.22); --badge-bg: rgba(37, 109, 168, 0.36); --badge-text: #9bcfff; }
+.exec-outcome-summary.teal { --tone: #5eead4; --card-bg: rgba(20, 184, 166, 0.2); --badge-bg: rgba(20, 184, 166, 0.3); --badge-text: #8ff5e7; }
 .exec-outcome-summary.purple { --tone: #b5a7ff; --card-bg: rgba(123, 95, 196, 0.22); --badge-bg: rgba(123, 95, 196, 0.36); --badge-text: #c9bdff; }
 .exec-outcome-summary.amber { --tone: #ffd166; --card-bg: rgba(255, 138, 0, 0.2); --badge-bg: rgba(255, 138, 0, 0.3); --badge-text: #ffd166; }
 .exec-outcome-summary.red { --tone: #ff8b92; --card-bg: rgba(196, 59, 69, 0.24); --badge-bg: rgba(196, 59, 69, 0.34); --badge-text: #ffb0b5; }
 .exec-outcome-summary.grey { --tone: #9aa1aa; --card-bg: rgba(116, 124, 132, 0.22); --badge-bg: rgba(116, 124, 132, 0.34); --badge-text: #cbd1d8; }
 :root:not([data-theme="dark"]) .exec-outcome-summary.green { --badge-text: #1f704b; }
 :root:not([data-theme="dark"]) .exec-outcome-summary.blue { --badge-text: #245f8f; }
+:root:not([data-theme="dark"]) .exec-outcome-summary.teal { --badge-text: #0f766e; }
 :root:not([data-theme="dark"]) .exec-outcome-summary.purple { --badge-text: #5a43a0; }
 :root:not([data-theme="dark"]) .exec-outcome-summary.amber { --badge-text: #8f4e00; }
 :root:not([data-theme="dark"]) .exec-outcome-summary.red { --badge-text: #a32d26; }
@@ -1023,6 +1028,7 @@ body.executive-export-light .executive-roadmap {
 :root:not([data-theme="dark"]) .exec-programme-status.grey { --programme-bg: #edf1ef; --programme-border: #7e8c84; }
 :root:not([data-theme="dark"]) .exec-outcome-summary.green { --card-bg: #e7f5ed; }
 :root:not([data-theme="dark"]) .exec-outcome-summary.blue { --card-bg: #e8f2fb; }
+:root:not([data-theme="dark"]) .exec-outcome-summary.teal { --card-bg: #e3faf7; }
 :root:not([data-theme="dark"]) .exec-outcome-summary.purple { --card-bg: #f0ecff; }
 :root:not([data-theme="dark"]) .exec-outcome-summary.amber { --card-bg: #fff0d2; }
 :root:not([data-theme="dark"]) .exec-outcome-summary.red { --card-bg: #ffe7e5; }
@@ -1044,6 +1050,7 @@ body.executive-export-light .executive-roadmap {
 }
 .exec-delivered-card.green { --tone: #87d695; }
 .exec-delivered-card.blue { --tone: #87bdf5; }
+.exec-delivered-card.teal { --tone: #5eead4; }
 .exec-delivered-card.purple { --tone: #b5a7ff; }
 .exec-delivered-card.amber { --tone: #ffd166; }
 .exec-delivered-card.red { --tone: #ff8b92; }
@@ -1216,6 +1223,8 @@ body.executive-export-light .executive-roadmap {
 .exec-node i.green { background: var(--exec-green); }
 .legend-dot.blue,
 .exec-node i.blue { background: var(--exec-blue); }
+.legend-dot.teal,
+.exec-node i.teal { background: var(--exec-teal); }
 .legend-dot.purple,
 .exec-node i.purple { background: var(--exec-purple); }
 .legend-dot.amber,
@@ -1408,12 +1417,14 @@ body.executive-export-light .executive-roadmap {
 .exec-outcome-detail.green { --outcome-border: #87d695; --outcome-bg: rgba(25, 122, 85, 0.22); --outcome-label: #9de6ad; }
 .exec-outcome-detail.blue { --outcome-border: #87bdf5; --outcome-bg: rgba(37, 109, 168, 0.22); --outcome-label: #9bcfff; }
 .exec-outcome-detail.purple { --outcome-border: #b5a7ff; --outcome-bg: rgba(123, 95, 196, 0.22); --outcome-label: #c9bdff; }
+.exec-outcome-detail.teal { --outcome-border: #5eead4; --outcome-bg: rgba(20, 184, 166, 0.18); --outcome-label: #8ff5e7; }
 .exec-outcome-detail.amber { --outcome-border: #ff8a00; --outcome-bg: rgba(255, 138, 0, 0.2); --outcome-label: #ffd166; }
 .exec-outcome-detail.red { --outcome-border: #ff8b92; --outcome-bg: rgba(196, 59, 69, 0.24); --outcome-label: #ffb0b5; }
 .exec-outcome-detail.grey { --outcome-border: #9aa1aa; --outcome-bg: rgba(116, 124, 132, 0.22); --outcome-label: #cbd1d8; }
 :root:not([data-theme="dark"]) .exec-outcome-detail.green { --outcome-bg: #e7f5ed; --outcome-border: #2e7d55; --outcome-label: #1f704b; }
 :root:not([data-theme="dark"]) .exec-outcome-detail.blue { --outcome-bg: #e8f2fb; --outcome-border: #3d78a9; --outcome-label: #245f8f; }
 :root:not([data-theme="dark"]) .exec-outcome-detail.purple { --outcome-bg: #f0ecff; --outcome-border: #7b5fc4; --outcome-label: #5a43a0; }
+:root:not([data-theme="dark"]) .exec-outcome-detail.teal { --outcome-bg: #e3faf7; --outcome-border: #14b8a6; --outcome-label: #0f766e; }
 :root:not([data-theme="dark"]) .exec-outcome-detail.amber { --outcome-bg: #fff0d2; --outcome-border: #ff8a00; --outcome-label: #8f4e00; }
 :root:not([data-theme="dark"]) .exec-outcome-detail.red { --outcome-bg: #ffe7e5; --outcome-border: #b33a32; --outcome-label: #a32d26; }
 :root:not([data-theme="dark"]) .exec-outcome-detail.grey { --outcome-bg: #edf1ef; --outcome-border: #7e8c84; --outcome-label: #5c6962; }
@@ -2135,6 +2146,10 @@ body.executive-export-light .executive-roadmap {
 .weekly-row mark.blue {
   color: #245f8f;
   background: rgba(61, 120, 169, 0.14);
+}
+.weekly-row mark.teal {
+  color: #0f766e;
+  background: rgba(20, 184, 166, 0.16);
 }
 .weekly-row mark.purple {
   color: #5a43a0;
@@ -3211,6 +3226,7 @@ body.executive-export-light .executive-roadmap {
     --exec-muted: #647269;
     --exec-green: #2e7d55;
     --exec-blue: #3d78a9;
+    --exec-teal: #14b8a6;
     --exec-purple: #7b5fc4;
     --exec-amber: #ff8a00;
     --exec-red: #b33a32;

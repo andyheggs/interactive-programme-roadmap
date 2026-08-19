@@ -25,7 +25,7 @@ type AutoTable = typeof import("jspdf-autotable").default;
 type TableRow = Array<string | number>;
 type ExecutiveTone = ReturnType<typeof executiveToneAssessment>["tone"];
 
-const colours: Record<"ink" | "muted" | "deep" | "line" | "pale" | "green" | "amber" | "red" | "blue" | "purple" | "grey" | "white", Rgb> = {
+const colours: Record<"ink" | "muted" | "deep" | "line" | "pale" | "green" | "amber" | "red" | "blue" | "teal" | "purple" | "grey" | "white", Rgb> = {
   ink: [28, 38, 33],
   muted: [91, 105, 96],
   deep: [33, 76, 67],
@@ -35,6 +35,7 @@ const colours: Record<"ink" | "muted" | "deep" | "line" | "pale" | "green" | "am
   amber: [232, 117, 26],
   red: [179, 58, 50],
   blue: [61, 120, 169],
+  teal: [20, 184, 166],
   purple: [123, 95, 196],
   grey: [126, 140, 132],
   white: [255, 255, 255],
@@ -43,6 +44,7 @@ const colours: Record<"ink" | "muted" | "deep" | "line" | "pale" | "green" | "am
 const executiveToneColours: Record<ExecutiveTone, Rgb> = {
   green: colours.green,
   blue: colours.blue,
+  teal: colours.teal,
   purple: colours.purple,
   amber: colours.amber,
   red: colours.red,
@@ -52,6 +54,7 @@ const executiveToneColours: Record<ExecutiveTone, Rgb> = {
 const executiveToneFills: Record<ExecutiveTone, Rgb> = {
   green: [231, 245, 237],
   blue: [232, 242, 251],
+  teal: [227, 250, 247],
   purple: [240, 236, 255],
   amber: [255, 240, 210],
   red: [255, 231, 229],
@@ -261,7 +264,7 @@ function drawRoadmapLegend(doc: JsPDF, x: number, y: number, w: number): number 
   const items: Array<{ tone: ExecutiveTone; label: string }> = [
     { tone: "green", label: "Complete" },
     { tone: "blue", label: "Ongoing" },
-    { tone: "purple", label: "Future" },
+    { tone: "teal", label: "Future" },
     { tone: "amber", label: "Date assumption" },
     { tone: "red", label: "Late" },
   ];

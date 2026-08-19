@@ -138,6 +138,7 @@ function milestonePlanStatusLabel(item: ProgrammeItem): string {
   if (item.status === "late") return item.delayDays && item.delayDays > 0 ? `Late +${item.delayDays}d` : "Late";
   if (item.status === "at-risk") return item.delayDays && item.delayDays > 0 ? `At risk +${item.delayDays}d` : "At risk";
   if (item.status === "in-progress") return "In progress";
+  if (item.status === "on-schedule") return "On schedule";
   if (item.status === "not-started") return "Not started";
   if (item.status === "future") return "Future";
   return item.status;
