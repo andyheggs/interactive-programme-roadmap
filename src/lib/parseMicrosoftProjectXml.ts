@@ -290,6 +290,8 @@ export function parseMicrosoftProjectXml(xml: string, sourceFileName?: string, b
         remainingDuration: childText(task, "RemainingDuration"),
         percentComplete: asNumber(childText(task, "PercentComplete")),
         percentWorkComplete: asNumber(childText(task, "PercentWorkComplete")),
+        actualStart: childText(task, "ActualStart"),
+        actualFinish: childText(task, "ActualFinish"),
         earlyStart: childText(task, "EarlyStart"),
         earlyFinish: childText(task, "EarlyFinish"),
         lateStart: childText(task, "LateStart"),

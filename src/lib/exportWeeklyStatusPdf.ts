@@ -132,6 +132,7 @@ function isCompleteStatus(status?: string): boolean {
 }
 
 function milestonePlanStatusLabel(item: ProgrammeItem): string {
+  if (item.dateAssumption) return "Date assumption";
   if (item.status === "complete") return "Completed";
   if (item.status === "blocked") return "Blocked";
   if (item.status === "late") return item.delayDays && item.delayDays > 0 ? `Late +${item.delayDays}d` : "Late";
@@ -332,21 +333,32 @@ function ensureSpace(doc: JsPDF, y: number, requiredHeight: number): number {
   return 18;
 }
 
+function boxAccent(title: string): Rgb {
+  const text = normaliseText(title);
+  if (text.includes("block")) return colours.red;
+  if (text.includes("forecast")) return colours.blue;
+  if (text.includes("next")) return colours.amber;
+  return colours.green;
+}
+
 function addBox(doc: JsPDF, x: number, y: number, w: number, h: number, title: string, body: string | string[]) {
-  doc.setDrawColor(...colours.line);
-  doc.setFillColor(255, 255, 255);
+  const accent = boxAccent(title);
+  doc.setDrawColor(...accent);
+  doc.setFillColor(248, 252, 255);
   doc.roundedRect(x, y, w, h, 2.2, 2.2, "FD");
+  doc.setFillColor(...accent);
+  doc.rect(x, y, 1.8, h, "F");
   doc.setFont("helvetica", "bold");
   doc.setFontSize(7.6);
   setText(doc, colours.muted);
-  doc.text(title.toUpperCase(), x + 4, y + 7);
+  doc.text(title.toUpperCase(), x + 5, y + 8);
   doc.setDrawColor(...colours.line);
-  doc.line(x + 4, y + 10, x + w - 4, y + 10);
+  doc.line(x + 5, y + 12, x + w - 4, y + 12);
   doc.setFont("helvetica", "bold");
-  doc.setFontSize(10);
+  doc.setFontSize(9.4);
   setText(doc, colours.ink);
   const lines = Array.isArray(body) ? body : doc.splitTextToSize(body, w - 8);
-  doc.text(lines.slice(0, 7), x + 4, y + 18);
+  doc.text(lines.slice(0, Math.max(2, Math.floor((h - 17) / 4.4))), x + 5, y + 20);
 }
 
 function textBoxHeight(doc: JsPDF, lines: string[], width: number): number {
@@ -525,19 +537,17 @@ export async function exportWeeklyStatusPdf({ schedule, tracker, dateWindow, cur
   y += snapshotHeight + 8;
 
   const cardWidth = (pageWidth - 30) / 2;
-  addBox(doc, 12, y, cardWidth, 22, "Delivery confidence", deliveryConfidence);
-  addBox(doc, 18 + cardWidth, y, cardWidth, 22, "Forecast to go live", forecastToGoLive);
-  y += 27;
-  addBox(doc, 12, y, cardWidth, 28, "Main blocker", mainBlocker);
-  addBox(doc, 18 + cardWidth, y, cardWidth, 28, "Next milestone", nextKeyDate);
-  y += 34;
+  addBox(doc, 12, y, cardWidth, 28, "Delivery confidence", deliveryConfidence);
+  addBox(doc, 18 + cardWidth, y, cardWidth, 28, "Forecast to go live", forecastToGoLive);
+  y += 33;
+  addBox(doc, 12, y, cardWidth, 32, "Main blocker", mainBlocker);
+  addBox(doc, 18 + cardWidth, y, cardWidth, 32, "Next milestone", nextKeyDate);
+  y += 38;
 
   y = addNarrativeBox(doc, y, "Last week", progressItems, "No weekly progress summary found.");
   y = addNarrativeBox(doc, y, "This week / next", priorityItems, "No priority actions summary found.");
   y = addNarrativeBox(doc, y, "What changed this week", whatChangedItems, "No material changes captured in the latest weekly row.");
 
-  doc.addPage();
-  y = 18;
   table(
     doc,
     autoTable,

@@ -1,7 +1,7 @@
 import type { jsPDF as JsPDF } from "jspdf";
 import type { ProgrammeItem, ProgrammeSchedule } from "../types/programme";
 import type { TrackerData, WeeklyStatusCuration, WeeklySummary } from "../types/reporting";
-import { buildExecutiveRoadmapModel, executiveToneAssessment, executiveToneLabel } from "./executiveRoadmapData";
+import { buildExecutiveRoadmapModel, executiveToneAssessment, executiveToneLabel, regularMilestoneToneAssessment } from "./executiveRoadmapData";
 import { formatDate, parseDate } from "./dateUtils";
 
 type DateWindow = {
@@ -25,7 +25,7 @@ type AutoTable = typeof import("jspdf-autotable").default;
 type TableRow = Array<string | number>;
 type ExecutiveTone = ReturnType<typeof executiveToneAssessment>["tone"];
 
-const colours: Record<"ink" | "muted" | "deep" | "line" | "pale" | "green" | "amber" | "red" | "blue" | "grey" | "white", Rgb> = {
+const colours: Record<"ink" | "muted" | "deep" | "line" | "pale" | "green" | "amber" | "red" | "blue" | "purple" | "grey" | "white", Rgb> = {
   ink: [28, 38, 33],
   muted: [91, 105, 96],
   deep: [33, 76, 67],
@@ -35,6 +35,7 @@ const colours: Record<"ink" | "muted" | "deep" | "line" | "pale" | "green" | "am
   amber: [232, 117, 26],
   red: [179, 58, 50],
   blue: [61, 120, 169],
+  purple: [123, 95, 196],
   grey: [126, 140, 132],
   white: [255, 255, 255],
 };
@@ -42,6 +43,7 @@ const colours: Record<"ink" | "muted" | "deep" | "line" | "pale" | "green" | "am
 const executiveToneColours: Record<ExecutiveTone, Rgb> = {
   green: colours.green,
   blue: colours.blue,
+  purple: colours.purple,
   amber: colours.amber,
   red: colours.red,
   grey: colours.grey,
@@ -50,6 +52,7 @@ const executiveToneColours: Record<ExecutiveTone, Rgb> = {
 const executiveToneFills: Record<ExecutiveTone, Rgb> = {
   green: [231, 245, 237],
   blue: [232, 242, 251],
+  purple: [240, 236, 255],
   amber: [255, 240, 210],
   red: [255, 231, 229],
   grey: [237, 241, 239],
@@ -256,11 +259,11 @@ function setRgbText(doc: JsPDF, colour: Rgb) {
 
 function drawRoadmapLegend(doc: JsPDF, x: number, y: number, w: number): number {
   const items: Array<{ tone: ExecutiveTone; label: string }> = [
-    { tone: "green", label: "Complete / confirmed" },
-    { tone: "blue", label: "Planned / dated" },
-    { tone: "amber", label: "Date assumption / Amber" },
-    { tone: "red", label: "Blocked / late" },
-    { tone: "grey", label: "Not assessed" },
+    { tone: "green", label: "Complete" },
+    { tone: "blue", label: "Ongoing" },
+    { tone: "purple", label: "Future" },
+    { tone: "amber", label: "Date assumption" },
+    { tone: "red", label: "Late" },
   ];
   setRgbDraw(doc, colours.line);
   setRgbFill(doc, colours.pale);
@@ -282,7 +285,7 @@ function drawRoadmapLegend(doc: JsPDF, x: number, y: number, w: number): number 
   doc.setFont("helvetica", "normal");
   doc.setFontSize(6.6);
   setRgbText(doc, colours.muted);
-  doc.text("Each lane shows key linked predecessor milestones/enablers flowing into the executive milestone card.", x + 4, y + 14);
+  doc.text("Lane milestones use Project Status plus Date Assumption. Executive cards retain the executive milestone RAG rule.", x + 4, y + 14);
   return y + 24;
 }
 
@@ -345,7 +348,7 @@ function drawRoadmapLane(doc: JsPDF, path: { outcome: ProgrammeItem; dependencie
     const textW = Math.min(34, Math.max(24, pathW / Math.max(1, dependencies.length) - 3));
     dependencies.forEach((item, index) => {
       const dotX = dependencies.length === 1 ? pathX + pathW / 2 : pathX + index * step;
-      const assessment = executiveToneAssessment(item);
+      const assessment = regularMilestoneToneAssessment(item);
       const tone = assessment.tone;
       setRgbFill(doc, executiveToneColours[tone]);
       doc.circle(dotX, centreY, 2.8, "F");

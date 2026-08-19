@@ -8,7 +8,7 @@ export type DateWindow = {
   label: string;
 };
 
-export type ExecutiveTone = "green" | "blue" | "amber" | "red" | "grey";
+export type ExecutiveTone = "green" | "blue" | "purple" | "amber" | "red" | "grey";
 
 export type ExecutiveRoadmapPath = {
   outcome: ProgrammeItem;
@@ -46,6 +46,7 @@ export type ExecutiveToneAssessment = {
 export const executiveToneLabels: Record<ExecutiveTone, string> = {
   green: "GREEN",
   blue: "PLANNED",
+  purple: "FUTURE",
   amber: "AMBER",
   red: "RED",
   grey: "NOT ASSESSED",
@@ -63,6 +64,15 @@ export function executiveToneLabel(item?: ProgrammeItem): string {
   if (normaliseText(item?.status).includes("at risk") && assessment.tone === "amber") return "AT RISK";
   return executiveToneLabels[assessment.tone];
 }
+
+export const regularMilestoneToneLabels: Record<ExecutiveTone, string> = {
+  green: "COMPLETE",
+  blue: "ONGOING",
+  purple: "FUTURE",
+  amber: "DATE ASSUMPTION",
+  red: "LATE",
+  grey: "FUTURE",
+};
 
 export function normaliseText(value?: string): string {
   return (value ?? "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
@@ -99,6 +109,7 @@ function summariseAssessment(tone: ExecutiveTone, reasons: string[]): string {
   if (tone === "red") return firstReason ? `Red because ${firstReason.toLowerCase()}.` : "Red because current RAG is Red, or status fallback is blocked/late.";
   if (tone === "green") return firstReason ? `Green because ${firstReason.toLowerCase()}.` : "Green because current RAG is Green, or status fallback is complete.";
   if (tone === "blue") return firstReason ? `Planned because ${firstReason.toLowerCase()}.` : "Planned because no RAG or assumption concern is flagged.";
+  if (tone === "purple") return firstReason ? `Future because ${firstReason.toLowerCase()}.` : "Future because the Project status is future or planned.";
   return firstReason ? `Not assessed because ${firstReason.toLowerCase()}.` : "Not assessed because no RAG, date assumption or fallback status is captured.";
 }
 
@@ -184,6 +195,61 @@ export function executiveToneAssessment(item?: ProgrammeItem): ExecutiveToneAsse
     reasons,
     evidence,
   };
+}
+
+export function regularMilestoneToneAssessment(item?: ProgrammeItem): ExecutiveToneAssessment {
+  if (!item) {
+    return {
+      tone: "purple",
+      summary: "Future because no project plan item is selected.",
+      reasons: ["No project plan item is selected."],
+      evidence: [],
+    };
+  }
+
+  const status = normaliseText(item.status);
+  const evidence = [
+    planStatusLabel(item.status) ? { label: "Plan status", value: planStatusLabel(item.status)! } : undefined,
+    item.dateAssumption !== undefined ? { label: "Date assumption", value: item.dateAssumption ? "Yes" : "No" } : undefined,
+    item.percentComplete !== undefined ? { label: "% complete", value: `${item.percentComplete}%` } : undefined,
+    item.baselineFinish ? { label: "Baseline finish", value: formatDate(item.baselineFinish) } : undefined,
+    item.delayDays && item.delayDays > 0 ? { label: "Delay against baseline", value: `${item.delayDays} calendar days` } : undefined,
+  ].filter((entry): entry is { label: string; value: string } => Boolean(entry));
+
+  let tone: ExecutiveTone = "purple";
+  const reasons: string[] = [];
+
+  if (item.dateAssumption) {
+    tone = "amber";
+    reasons.push("Date assumption is flagged as Yes");
+  } else if (status.includes("blocked") || status.includes("late") || status.includes("overdue")) {
+    tone = "red";
+    reasons.push(planStatusLabel(item.status) ? `Project Status is ${planStatusLabel(item.status)}` : "Project Status is late or blocked");
+  } else if (status.includes("complete") || status.includes("closed") || status.includes("done") || item.percentComplete === 100) {
+    tone = "green";
+    reasons.push("Project Status is complete");
+  } else if (status.includes("progress") || status.includes("ongoing") || status.includes("on schedule") || status.includes("schedule")) {
+    tone = "blue";
+    reasons.push(planStatusLabel(item.status) ? `Project Status is ${planStatusLabel(item.status)}` : "Project Status is ongoing");
+  } else if (status.includes("future") || status.includes("planned") || status.includes("not started")) {
+    tone = "purple";
+    reasons.push(planStatusLabel(item.status) ? `Project Status is ${planStatusLabel(item.status)}` : "Project Status is future");
+  } else {
+    tone = item.finishDate ? "purple" : "blue";
+    reasons.push(item.finishDate ? "Forecast finish date is captured and no active status is flagged" : "No milestone status is captured");
+  }
+
+  return {
+    tone,
+    summary: summariseAssessment(tone, reasons),
+    reasons,
+    evidence,
+  };
+}
+
+export function regularMilestoneToneLabel(item?: ProgrammeItem): string {
+  const assessment = regularMilestoneToneAssessment(item);
+  return regularMilestoneToneLabels[assessment.tone];
 }
 
 function weeklySummaryDate(summary: { meetingDate?: string; weekEnding?: string; lastUpdated?: string }): Date | undefined {

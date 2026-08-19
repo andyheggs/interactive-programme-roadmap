@@ -51,6 +51,8 @@ export type ProgrammeItem = {
   earlyFinish?: string;
   lateStart?: string;
   lateFinish?: string;
+  actualStart?: string;
+  actualFinish?: string;
   freeSlack?: number;
   totalSlack?: number;
   startVariance?: number;

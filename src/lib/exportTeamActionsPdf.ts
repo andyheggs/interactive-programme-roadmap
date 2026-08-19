@@ -110,7 +110,7 @@ function addFooter(doc: JsPDF) {
 function itemTone(item: TeamActionPdfItem): "green" | "amber" | "red" | "blue" {
   const status = item.displayStatus ?? item.status;
   if (isComplete(status)) return "green";
-  if (isBlocked(status) || normaliseText(status).includes("overdue")) return "red";
+  if (isBlocked(status) || normaliseText(status).includes("overdue") || normaliseText(status).includes("late")) return "red";
   if (normaliseText(status).includes("due soon") || normaliseText(item.priority).includes("high")) return "amber";
   return "blue";
 }
@@ -120,7 +120,7 @@ function isAttentionItem(item: TeamActionPdfItem): boolean {
   const due = parseDate(item.dueDate);
   const today = new Date();
   today.setHours(0, 0, 0, 0);
-  return !isComplete(status) && (isBlocked(status) || normaliseText(status).includes("overdue") || Boolean(due && due <= addDays(today, 14)));
+  return !isComplete(status) && (isBlocked(status) || normaliseText(status).includes("overdue") || normaliseText(status).includes("late") || Boolean(due && due <= addDays(today, 14)));
 }
 
 function itemSort(a: TeamActionPdfItem, b: TeamActionPdfItem): number {
@@ -136,12 +136,15 @@ function summaryRows(items: TeamActionPdfItem[]): TableRow[] {
   const counts = {
     open: items.filter((item) => !isComplete(item.displayStatus ?? item.status)).length,
     completed: items.filter((item) => isComplete(item.displayStatus ?? item.status)).length,
-    overdue: items.filter((item) => normaliseText(item.displayStatus ?? item.status).includes("overdue")).length,
+    late: items.filter((item) => {
+      const status = normaliseText(item.displayStatus ?? item.status);
+      return status.includes("overdue") || status.includes("late");
+    }).length,
     blocked: items.filter((item) => isBlocked(item.displayStatus ?? item.status)).length,
   };
   return [
     ["Open / needs doing", String(counts.open)],
-    ["Overdue", String(counts.overdue)],
+    ["Late", String(counts.late)],
     ["Blocked", String(counts.blocked)],
     ["Completed in view", String(counts.completed)],
     ["Total rows in export", String(items.length)],

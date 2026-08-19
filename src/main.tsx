@@ -32,9 +32,10 @@ import {
   exportExecutiveRoadmapHtml,
   exportExecutiveRoadmapImage,
   exportExecutiveRoadmapPosterPdf,
+  exportExecutiveRoadmapPrintPdf,
 } from "./lib/exportExecutiveRoadmapVisuals";
 import { exportGanttPdf, type GanttPdfSection } from "./lib/exportGanttPdf";
-import { buildExecutiveRoadmapModel, executiveToneAssessment, executiveToneLabel } from "./lib/executiveRoadmapData";
+import { buildExecutiveRoadmapModel, executiveToneAssessment, executiveToneLabel, regularMilestoneToneAssessment } from "./lib/executiveRoadmapData";
 import { exportTeamActionsPdf as exportTeamActionsA4Pdf } from "./lib/exportTeamActionsPdf";
 import { exportWeeklyStatusPdf as exportWeeklyStatusA4Pdf } from "./lib/exportWeeklyStatusPdf";
 import { exportWeeklyDistributionPackPdf } from "./lib/exportWeeklyDistributionPackPdf";
@@ -643,11 +644,12 @@ function actionStatusGroup(item: TeamWorkItem): "open" | "due-soon" | "overdue" 
 function statusLabel(item: TeamWorkItem): string {
   const group = actionStatusGroup(item);
   if (group === "due-soon") return item.status ? `${item.status} / due soon` : "Due soon";
-  if (group === "overdue") return item.status ? `${item.status} / overdue` : "Overdue";
+  if (group === "overdue") return item.status ? `${item.status} / late` : "Late";
   return item.status ?? "Not set";
 }
 
 function milestonePlanStatusLabel(item: ProgrammeItem): string {
+  if (item.dateAssumption) return "Date assumption";
   if (item.status === "complete") return "Completed";
   if (item.status === "blocked") return "Blocked";
   if (item.status === "late") return item.delayDays && item.delayDays > 0 ? `Late +${item.delayDays}d` : "Late";
@@ -862,7 +864,7 @@ function lateMilestones(schedule: ProgrammeSchedule): ProgrammeItem[] {
     .sort((a, b) => (b.delayDays ?? 0) - (a.delayDays ?? 0));
 }
 
-type ExecutiveTone = "green" | "blue" | "amber" | "red" | "grey";
+type ExecutiveTone = "green" | "blue" | "purple" | "amber" | "red" | "grey";
 
 type ExecutivePath = {
   outcome: ProgrammeItem;
@@ -895,23 +897,15 @@ type TeamWorkItem = {
 };
 
 type TeamStatusFilter = "open" | "due-soon" | "overdue" | "blocked" | "completed";
-type TeamActionScope = "standard" | "last-meeting-actions" | "all-meeting-actions";
+type TeamActionScope = "standard" | "last-meeting-actions" | "all-meeting-actions" | "project-tasks";
 
 const teamStatusFilters: Array<{ key: TeamStatusFilter; label: string }> = [
   { key: "open", label: "Open" },
   { key: "due-soon", label: "Due soon" },
-  { key: "overdue", label: "Overdue" },
+  { key: "overdue", label: "Late" },
   { key: "blocked", label: "Blocked" },
   { key: "completed", label: "Completed" },
 ];
-
-const executiveToneLabels: Record<ExecutiveTone, string> = {
-  green: "GREEN",
-  blue: "PLANNED",
-  amber: "AMBER",
-  red: "RED",
-  grey: "NOT ASSESSED",
-};
 
 function normaliseText(value?: string): string {
   return (value ?? "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
@@ -1053,6 +1047,10 @@ function executiveTone(item?: ProgrammeItem): ExecutiveTone {
   return executiveToneAssessment(item).tone;
 }
 
+function regularMilestoneTone(item?: ProgrammeItem): ExecutiveTone {
+  return regularMilestoneToneAssessment(item).tone;
+}
+
 function recoveryConfidence(weekly: ReturnType<typeof latestWeeklySummary>, outcomes: ProgrammeItem[]): ExecutiveTone {
   const goLive = normaliseText(weekly?.goLiveConfidence);
   const tones = outcomes.map(executiveTone);
@@ -1121,6 +1119,43 @@ function closestDirectPredecessors(item: ProgrammeItem, byUid: Map<string, Progr
     })
     .slice(0, limit)
     .sort((a, b) => bySoonest(a.finishDate, b.finishDate));
+}
+
+function latestBaseline(item?: ProgrammeItem) {
+  return item?.baselines
+    ?.filter((baseline) => baseline.start || baseline.finish)
+    .slice()
+    .sort((a, b) => b.number - a.number)[0];
+}
+
+function dateVarianceDays(finishDate?: string, baselineFinish?: string): number | undefined {
+  const finish = parseDate(finishDate);
+  const baseline = parseDate(baselineFinish);
+  if (!finish || !baseline) return undefined;
+  return Math.round((finish.getTime() - baseline.getTime()) / (1000 * 60 * 60 * 24));
+}
+
+function varianceLabel(days?: number): string {
+  if (days === undefined) return "Not held";
+  if (days === 0) return "0 calendar days";
+  return `${days > 0 ? "+" : ""}${days} calendar days`;
+}
+
+function projectFieldRows(item?: ProgrammeItem): Array<[string, string]> {
+  if (!item) return [];
+  const baseline = latestBaseline(item);
+  const baselineFinish = baseline?.finish ?? item.baselineFinish;
+  return [
+    ["Start", formatDate(item.startDate)],
+    ["Finish", formatDate(item.finishDate)],
+    ["Status", milestonePlanStatusLabel(item)],
+    ["% complete", item.percentComplete !== undefined ? `${item.percentComplete}%` : "Not held"],
+    ["Milestone", item.isMilestone ? "Yes" : "No"],
+    ["Baseline finish", baselineFinish ? `${formatDate(baselineFinish)}${baseline?.number !== undefined ? ` (Baseline ${baseline.number})` : ""}` : "Not held"],
+    ["Finish variance v baseline", varianceLabel(dateVarianceDays(item.finishDate, baselineFinish))],
+    ["Actual finish", formatDate(item.actualFinish)],
+    ["Resource name", item.resourceNames?.join(", ") || "Not held"],
+  ];
 }
 
 function visibleExecutivePathItem(item: ProgrammeItem): boolean {
@@ -1425,6 +1460,7 @@ function ExecutiveSnapshotView({
   onExportSnapshotPdf,
   onExportSnapshotImage,
   onExportSnapshotPosterPdf,
+  onExportSnapshotPrintPdf,
   onExportSnapshotHtml,
 }: {
   schedule: ProgrammeSchedule;
@@ -1440,6 +1476,7 @@ function ExecutiveSnapshotView({
   onExportSnapshotPdf?: () => void;
   onExportSnapshotImage?: () => void;
   onExportSnapshotPosterPdf?: () => void;
+  onExportSnapshotPrintPdf?: () => void;
   onExportSnapshotHtml?: () => void;
 }) {
   const weekly = latestWeeklySummary(tracker);
@@ -1609,11 +1646,11 @@ function ExecutiveSnapshotView({
           </div>
 
           <div className="exec-legend" aria-label="Roadmap legend">
-            <span><i className="legend-dot green" /> Complete / confirmed</span>
-            <span><i className="legend-dot blue" /> Planned / dated</span>
+            <span><i className="legend-dot green" /> Complete</span>
+            <span><i className="legend-dot blue" /> Ongoing</span>
+            <span><i className="legend-dot purple" /> Future</span>
             <span><i className="legend-dot amber" /> Date assumption / not confirmed</span>
-            <span><i className="legend-dot red" /> Blocked / late</span>
-            <span><i className="legend-dot grey" /> Not assessed</span>
+            <span><i className="legend-dot red" /> Late</span>
             <span><i className="legend-dot executive" /> Executive dependency</span>
           </div>
 
@@ -1628,7 +1665,7 @@ function ExecutiveSnapshotView({
                 ? [path.outcome, ...path.dependencies, ...pathChain].find((item) => item.uid === expandedUid)
                 : undefined;
               const expandedPredecessors = expandedItem ? closestDirectPredecessors(expandedItem, byUid, 2) : [];
-              const expandedAssessment = expandedItem ? executiveToneAssessment(expandedItem) : undefined;
+              const expandedPredecessor = expandedPredecessors[0];
               return (
               <article
                 className={`exec-path ${path.outcome.uid === selectedPath?.outcome.uid ? "selected" : ""} ${draggedLaneUid === path.outcome.uid ? "dragging" : ""}`}
@@ -1668,7 +1705,7 @@ function ExecutiveSnapshotView({
                 <div className="exec-path-grid">
                   <div className="exec-sequence" aria-label={`${path.outcome.name} dependency pathway`}>
                     {path.dependencies.length ? path.dependencies.map((item) => {
-                      const tone = executiveTone(item);
+                      const tone = regularMilestoneTone(item);
                       return (
                         <button
                           className={`exec-node ${expandedUid === item.uid ? "expanded" : ""}`}
@@ -1721,47 +1758,48 @@ function ExecutiveSnapshotView({
                           Remove from roadmap
                         </button>
                       ) : null}
-                      {expandedAssessment ? (
-                        <div className={`exec-rag-explainer ${expandedAssessment.tone}`}>
-                          <strong>{expandedItem ? executiveToneLabel(expandedItem) : executiveToneLabels[expandedAssessment.tone]} status rationale</strong>
-                          <p>{expandedAssessment.summary}</p>
-                          <ul>
-                            {expandedAssessment.reasons.map((reason) => (
-                              <li key={reason}>{reason}</li>
-                            ))}
-                          </ul>
-                          {expandedAssessment.evidence.length ? (
-                            <dl>
-                              {expandedAssessment.evidence.map((entry) => (
-                                <React.Fragment key={entry.label}>
-                                  <dt>{entry.label}</dt>
-                                  <dd>{entry.value}</dd>
-                                </React.Fragment>
-                              ))}
-                            </dl>
-                          ) : null}
-                        </div>
-                      ) : null}
+                      <div className="exec-source-fields">
+                        <strong>Roadmap item details</strong>
+                        <dl>
+                          {projectFieldRows(expandedItem).map(([label, value]) => (
+                            <div key={label}>
+                              <dt>{label}</dt>
+                              <dd>{value}</dd>
+                            </div>
+                          ))}
+                        </dl>
+                      </div>
                     </div>
                     <div className="exec-drilldown-list">
-                      {expandedPredecessors.length ? expandedPredecessors.map((item) => {
-                        const tone = executiveTone(item);
-                        return (
-                          <button
-                            className="exec-drilldown-card"
-                            type="button"
-                            key={item.uid}
-                            onClick={() => {
-                              setSelectedUid(path.outcome.uid);
-                              toggleExpanded(item.uid);
-                            }}
-                          >
-                            <span>{formatDate(item.finishDate)}</span>
-                            <strong>{item.name}</strong>
-                            <em className={tone}>{executiveToneLabel(item)}</em>
-                          </button>
-                        );
-                      }) : (
+                      {expandedPredecessor ? (
+                        <article className="exec-predecessor-panel">
+                          <div>
+                            <span>Closest direct predecessor</span>
+                            <h4>{expandedPredecessor.name}</h4>
+                            <p>{formatDate(expandedPredecessor.finishDate)} · {expandedPredecessor.stream ?? expandedPredecessor.milestoneLevel ?? expandedPredecessor.dependencyLevel ?? "Project plan item"}</p>
+                            {onToggleContextItem ? (
+                              <button
+                                className={`exec-context-action ${contextUidSet.has(expandedPredecessor.uid) ? "selected" : ""}`}
+                                type="button"
+                                onClick={() => toggleContextItem(expandedPredecessor.uid)}
+                              >
+                                {contextUidSet.has(expandedPredecessor.uid) ? "Added to roadmap" : "Add to roadmap"}
+                              </button>
+                            ) : null}
+                          </div>
+                          <div className="exec-source-fields">
+                            <strong>Predecessor details</strong>
+                            <dl>
+                              {projectFieldRows(expandedPredecessor).map(([label, value]) => (
+                                <div key={label}>
+                                  <dt>{label}</dt>
+                                  <dd>{value}</dd>
+                                </div>
+                              ))}
+                            </dl>
+                          </div>
+                        </article>
+                      ) : (
                         <p>No direct predecessor items are linked to this item in the Project plan.</p>
                       )}
                     </div>
@@ -1893,6 +1931,12 @@ function ExecutiveSnapshotView({
             <button className="download-action" type="button" onClick={onExportSnapshotPosterPdf}>
               <Download size={15} />
               Poster PDF
+            </button>
+          ) : null}
+          {onExportSnapshotPrintPdf ? (
+            <button className="download-action" type="button" onClick={onExportSnapshotPrintPdf}>
+              <Download size={15} />
+              A4 Visual PDF
             </button>
           ) : null}
           {onExportSnapshotImage ? (
@@ -2264,7 +2308,7 @@ function WeeklyExecutiveStatusView({
                     <span>{formatDate(item.finishDate)}</span>
                     <strong>{item.name}</strong>
                     <em>{item.stream ?? item.milestoneLevel ?? "Milestone"}</em>
-                    <mark className={`milestone-status ${item.status}`}>{milestonePlanStatusLabel(item)}</mark>
+                    <mark className={`milestone-status ${regularMilestoneTone(item)}`}>{milestonePlanStatusLabel(item)}</mark>
                   </div>
                   {renderControls("milestones", item.uid, visibleIds)}
                 </div>
@@ -2810,6 +2854,7 @@ function TeamActionTrackerView({
   const [stream, setStream] = useState("all");
   const [search, setSearch] = useState("");
   const [selectedPackOwners, setSelectedPackOwners] = useState<string[]>([]);
+  const [selectedMeetingActionIds, setSelectedMeetingActionIds] = useState<string[]>([]);
   const allItems = combineTeamWorkItems(schedule, tracker);
   const meetingActions = allItems.filter((item) => item.source === "Meeting action");
   const lastMeetingDate = latestMeetingActionDate(allItems);
@@ -2821,7 +2866,7 @@ function TeamActionTrackerView({
     setSelectedPackOwners((current) => {
       if (!owners.length) return [];
       const valid = current.filter((name) => owners.includes(name));
-      return valid.length ? valid : owners;
+      return valid;
     });
   }, [ownerKey]);
   const selectedActionPacks = actionPacks.filter((pack) => selectedPackOwners.includes(pack.ownerName));
@@ -2833,8 +2878,13 @@ function TeamActionTrackerView({
       const dateForWindow = group === "completed" ? item.completionDate ?? item.dueDate ?? item.meetingDate : item.dueDate ?? item.meetingDate;
       if (actionScope === "last-meeting-actions") {
         if (item.source !== "Meeting action" || !sameCalendarDate(item.meetingDate ?? item.loggedDate, lastMeetingDate)) return false;
+        if (!selectedMeetingActionIds.includes(item.id)) return false;
       } else if (actionScope === "all-meeting-actions") {
         if (item.source !== "Meeting action") return false;
+      } else if (actionScope === "project-tasks") {
+        if (item.source !== "Project task") return false;
+        if (!teamStatusMatches(group, statusFilters)) return false;
+        if (!dateWithin(dateForWindow, dateWindow)) return false;
       } else {
         if (!teamStatusMatches(group, statusFilters)) return false;
         if (source !== "all" && item.source !== source) return false;
@@ -2859,6 +2909,14 @@ function TeamActionTrackerView({
   const togglePackOwner = (name: string) => {
     setSelectedPackOwners((current) => current.includes(name) ? current.filter((item) => item !== name) : [...current, name]);
   };
+  const showLastMeetingActions = () => {
+    setActionScope("last-meeting-actions");
+    setSelectedMeetingActionIds(lastMeetingActions.map((item) => item.id));
+  };
+  const toggleMeetingAction = (id: string) => {
+    setSelectedMeetingActionIds((current) => current.includes(id) ? current.filter((item) => item !== id) : [...current, id]);
+  };
+  const actionPackJump = () => document.getElementById("team-action-packs")?.scrollIntoView({ behavior: "smooth", block: "start" });
 
   return (
     <>
@@ -2867,7 +2925,7 @@ function TeamActionTrackerView({
         <StatGrid cards={[
           ["Open / needs doing", counts.open.toString()],
           ["Due soon", counts.dueSoon.toString(), counts.dueSoon ? "warn" : ""],
-          ["Overdue", counts.overdue.toString(), counts.overdue ? "warn" : ""],
+          ["Late", counts.overdue.toString(), counts.overdue ? "warn" : ""],
           ["Completed", counts.completed.toString()],
         ]} />
 
@@ -2876,11 +2934,17 @@ function TeamActionTrackerView({
             <button type="button" className={actionScope === "standard" ? "active" : ""} aria-pressed={actionScope === "standard"} onClick={() => setActionScope("standard")}>
               Standard view
             </button>
-            <button type="button" className={actionScope === "last-meeting-actions" ? "active" : ""} aria-pressed={actionScope === "last-meeting-actions"} onClick={() => setActionScope("last-meeting-actions")}>
+            <button type="button" className={actionScope === "last-meeting-actions" ? "active" : ""} aria-pressed={actionScope === "last-meeting-actions"} onClick={showLastMeetingActions}>
               Last meeting actions ({lastMeetingActions.length})
             </button>
             <button type="button" className={actionScope === "all-meeting-actions" ? "active" : ""} aria-pressed={actionScope === "all-meeting-actions"} onClick={() => setActionScope("all-meeting-actions")}>
               All meeting actions ({meetingActions.length})
+            </button>
+            <button type="button" className={actionScope === "project-tasks" ? "active" : ""} aria-pressed={actionScope === "project-tasks"} onClick={() => setActionScope("project-tasks")}>
+              Project tasks
+            </button>
+            <button type="button" onClick={actionPackJump}>
+              Action pack selection
             </button>
           </div>
           <div className="tabs" aria-label="Action status filters">
@@ -2889,18 +2953,31 @@ function TeamActionTrackerView({
                 type="button"
                 className={statusFilters.includes(key) ? "active" : ""}
                 aria-pressed={statusFilters.includes(key)}
-                disabled={actionScope !== "standard"}
+                disabled={actionScope === "last-meeting-actions" || actionScope === "all-meeting-actions"}
                 onClick={() => toggleStatusFilter(key)}
                 key={key}
               >
                 {label}
               </button>
             ))}
-            <button type="button" className={!statusFilters.length ? "active" : ""} aria-pressed={!statusFilters.length} disabled={actionScope !== "standard"} onClick={() => setStatusFilters([])}>All</button>
+            <button type="button" className={!statusFilters.length ? "active" : ""} aria-pressed={!statusFilters.length} disabled={actionScope === "last-meeting-actions" || actionScope === "all-meeting-actions"} onClick={() => setStatusFilters([])}>All</button>
           </div>
-          {actionScope !== "standard" ? (
+          {actionScope === "last-meeting-actions" ? (
+            <div className="team-meeting-action-selector">
+              <strong>{selectedMeetingActionIds.length} of {lastMeetingActions.length} last meeting actions selected</strong>
+              <span>
+                <button type="button" onClick={() => setSelectedMeetingActionIds(lastMeetingActions.map((item) => item.id))}>Select all</button>
+                <button type="button" onClick={() => setSelectedMeetingActionIds([])}>Clear</button>
+              </span>
+            </div>
+          ) : null}
+          {actionScope !== "standard" && actionScope !== "project-tasks" ? (
             <p className="team-scope-note">
               Showing {actionScope === "last-meeting-actions" ? `meeting actions logged on ${formatDate(lastMeetingDate)}` : "all meeting actions"}; status, source and reporting date filters are bypassed for this quick view.
+            </p>
+          ) : actionScope === "project-tasks" ? (
+            <p className="team-scope-note">
+              Showing assigned Project plan tasks; status and reporting date filters still apply.
             </p>
           ) : null}
           <div className="team-filter-grid">
@@ -2939,6 +3016,16 @@ function TeamActionTrackerView({
               <details className={`team-action-card action-${group}`} key={item.id}>
                 <summary>
                   <span className="source-chip">{item.source}</span>
+                  {actionScope === "last-meeting-actions" ? (
+                    <input
+                      className="team-action-select"
+                      type="checkbox"
+                      checked={selectedMeetingActionIds.includes(item.id)}
+                      aria-label={`Include ${item.title}`}
+                      onClick={(event) => event.stopPropagation()}
+                      onChange={() => toggleMeetingAction(item.id)}
+                    />
+                  ) : null}
                   <strong>{item.title}</strong>
                   <span>{item.owner ?? "No owner"}</span>
                   <span className="team-action-date"><small>Logged</small>{formatDate(item.loggedDate ?? item.meetingDate)}</span>
@@ -2963,7 +3050,7 @@ function TeamActionTrackerView({
           {!filtered.length ? <article className="empty-panel"><h2>No actions found</h2><p>Adjust the status, owner, source, workstream or date window filters.</p></article> : null}
         </section>
 
-        <section className="team-action-packs">
+        <section id="team-action-packs" className="team-action-packs">
           <div className="team-action-packs-header">
             <div>
               <span className="snapshot-eyebrow">Team Action Tracker</span>
@@ -3000,7 +3087,7 @@ function TeamActionTrackerView({
             </div>
           ) : null}
           <div className="team-action-pack-grid">
-            {actionPacks.map((pack) => (
+            {selectedActionPacks.map((pack) => (
               <article className="team-action-pack-card" key={pack.ownerName}>
                 <header>
                   <div>
@@ -3049,6 +3136,7 @@ function TeamActionTrackerView({
               </article>
             ))}
             {!actionPacks.length ? <article className="empty-panel"><h2>No active assigned actions</h2><p>Import a tracker or Project plan with open assigned actions to create person packs.</p></article> : null}
+            {actionPacks.length && !selectedActionPacks.length ? <article className="empty-panel"><h2>No people selected</h2><p>Select one or more people above to preview their action pack or download the bundled A4 PDF.</p></article> : null}
           </div>
         </section>
       </div>
@@ -3145,6 +3233,7 @@ function DownloadsHub({
   onExportSnapshotPdf,
   onExportSnapshotImage,
   onExportSnapshotPosterPdf,
+  onExportSnapshotPrintPdf,
   onExportSnapshotHtml,
   onExportWeeklyDistributionPack,
 }: {
@@ -3160,6 +3249,7 @@ function DownloadsHub({
   onExportSnapshotPdf: () => void;
   onExportSnapshotImage: () => void;
   onExportSnapshotPosterPdf: () => void;
+  onExportSnapshotPrintPdf: () => void;
   onExportSnapshotHtml: () => void;
   onExportWeeklyDistributionPack: () => void;
 }) {
@@ -3199,6 +3289,12 @@ function DownloadsHub({
       meta: "Exports a designed print-safe executive roadmap poster without slicing the web page.",
       action: "Download Poster PDF",
       onClick: onExportSnapshotPosterPdf,
+    },
+    {
+      title: "Executive roadmap A4 visual PDF",
+      meta: "Exports a readable landscape A4 visual roadmap for meeting printouts.",
+      action: "Download A4 Visual",
+      onClick: onExportSnapshotPrintPdf,
     },
     {
       title: "Executive roadmap image",
@@ -3275,6 +3371,7 @@ function ReportingContent({
   onExportSnapshotPdf,
   onExportSnapshotImage,
   onExportSnapshotPosterPdf,
+  onExportSnapshotPrintPdf,
   onExportSnapshotHtml,
   onExportWeeklyDistributionPack,
   executiveContextUids,
@@ -3301,6 +3398,7 @@ function ReportingContent({
   onExportSnapshotPdf: () => void;
   onExportSnapshotImage: () => void;
   onExportSnapshotPosterPdf: () => void;
+  onExportSnapshotPrintPdf: () => void;
   onExportSnapshotHtml: () => void;
   onExportWeeklyDistributionPack: () => void;
   executiveContextUids: string[];
@@ -3331,6 +3429,7 @@ function ReportingContent({
       onExportSnapshotPdf={onExportSnapshotPdf}
       onExportSnapshotImage={onExportSnapshotImage}
       onExportSnapshotPosterPdf={onExportSnapshotPosterPdf}
+      onExportSnapshotPrintPdf={onExportSnapshotPrintPdf}
       onExportSnapshotHtml={onExportSnapshotHtml}
     />
   );
@@ -3367,6 +3466,7 @@ function ReportingContent({
       onExportSnapshotPdf={onExportSnapshotPdf}
       onExportSnapshotImage={onExportSnapshotImage}
       onExportSnapshotPosterPdf={onExportSnapshotPosterPdf}
+      onExportSnapshotPrintPdf={onExportSnapshotPrintPdf}
       onExportSnapshotHtml={onExportSnapshotHtml}
       onExportWeeklyDistributionPack={onExportWeeklyDistributionPack}
     />
@@ -3591,6 +3691,15 @@ function App() {
     }
   }
 
+  async function exportExecutiveSnapshotPrintPdf() {
+    setError(undefined);
+    try {
+      await exportExecutiveRoadmapPrintPdf(schedule, tracker, dateWindow, executiveContextUids, executiveRemovedUids, executiveLaneOrderUids);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "The Executive roadmap A4 visual PDF could not be generated.");
+    }
+  }
+
   function exportExecutiveSnapshotHtml() {
     setError(undefined);
     try {
@@ -3731,6 +3840,7 @@ function App() {
             onExportSnapshotPdf={exportExecutiveSnapshotPdf}
             onExportSnapshotImage={exportExecutiveSnapshotImage}
             onExportSnapshotPosterPdf={exportExecutiveSnapshotPosterPdf}
+            onExportSnapshotPrintPdf={exportExecutiveSnapshotPrintPdf}
             onExportSnapshotHtml={exportExecutiveSnapshotHtml}
             executiveContextUids={executiveContextUids}
             executiveRemovedUids={executiveRemovedUids}

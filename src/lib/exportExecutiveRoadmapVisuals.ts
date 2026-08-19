@@ -7,14 +7,15 @@ import {
   executiveTone,
   executiveToneAssessment,
   executiveToneLabel,
-  executiveToneLabels,
+  regularMilestoneToneAssessment,
+  regularMilestoneToneLabel,
   type DateWindow,
   type ExecutiveTone,
 } from "./executiveRoadmapData";
 
 type Rgb = [number, number, number];
 
-const colours: Record<"ink" | "muted" | "deep" | "line" | "pale" | "green" | "amber" | "red" | "blue" | "grey" | "white", Rgb> = {
+const colours: Record<"ink" | "muted" | "deep" | "line" | "pale" | "green" | "amber" | "red" | "blue" | "purple" | "grey" | "white", Rgb> = {
   ink: [28, 38, 33],
   muted: [91, 105, 96],
   deep: [33, 76, 67],
@@ -24,6 +25,7 @@ const colours: Record<"ink" | "muted" | "deep" | "line" | "pale" | "green" | "am
   amber: [255, 138, 0],
   red: [179, 58, 50],
   blue: [61, 120, 169],
+  purple: [123, 95, 196],
   grey: [126, 140, 132],
   white: [255, 255, 255],
 };
@@ -31,6 +33,7 @@ const colours: Record<"ink" | "muted" | "deep" | "line" | "pale" | "green" | "am
 const toneColours: Record<ExecutiveTone, Rgb> = {
   green: colours.green,
   blue: colours.blue,
+  purple: colours.purple,
   amber: colours.amber,
   red: colours.red,
   grey: colours.grey,
@@ -39,6 +42,7 @@ const toneColours: Record<ExecutiveTone, Rgb> = {
 const toneFills: Record<ExecutiveTone, Rgb> = {
   green: [231, 245, 237],
   blue: [232, 242, 251],
+  purple: [240, 236, 255],
   amber: [255, 240, 210],
   red: [255, 231, 229],
   grey: [237, 241, 239],
@@ -132,11 +136,11 @@ function drawSummaryCard(doc: JsPDF, x: number, y: number, w: number, title: str
 
 function drawLegend(doc: JsPDF, x: number, y: number, w: number): number {
   const items: Array<{ tone: ExecutiveTone; label: string }> = [
-    { tone: "green", label: "Complete / confirmed" },
-    { tone: "blue", label: "Planned / dated" },
+    { tone: "green", label: "Complete" },
+    { tone: "blue", label: "Ongoing" },
+    { tone: "purple", label: "Future" },
     { tone: "amber", label: "Date assumption / not confirmed" },
-    { tone: "red", label: "Blocked / late" },
-    { tone: "grey", label: "Not assessed" },
+    { tone: "red", label: "Late" },
   ];
   setDraw(doc, colours.line);
   setFill(doc, colours.pale);
@@ -158,7 +162,7 @@ function drawLegend(doc: JsPDF, x: number, y: number, w: number): number {
   doc.setFont("helvetica", "normal");
   doc.setFontSize(7);
   setText(doc, colours.muted);
-  doc.text("Orange means Date Assumption is Yes or the source RAG is Amber. Decision and dependency flags are shown as detail evidence.", x + 4, y + 15);
+  doc.text("Lane milestones use Project Status plus Date Assumption. Executive cards retain the executive milestone RAG rule.", x + 4, y + 15);
   return y + 24;
 }
 
@@ -208,7 +212,8 @@ function drawPathRow(doc: JsPDF, title: string, items: ProgrammeItem[], y: numbe
   doc.line(pathX, y + 16, pathX + pathWidth, y + 16);
   items.forEach((item, index) => {
     const x = pathX + index * (chipWidth + gap);
-    const tone = executiveTone(item);
+    const isOutcome = index === items.length - 1;
+    const tone = isOutcome ? executiveTone(item) : regularMilestoneToneAssessment(item).tone;
     setFill(doc, toneColours[tone]);
     doc.circle(x + 3, y + 16, 2.8, "F");
     doc.setFont("helvetica", "bold");
@@ -320,16 +325,46 @@ export async function exportExecutiveRoadmapPosterPdf(schedule: ProgrammeSchedul
   doc.save(`${fileSlug(schedule.title)}-executive-roadmap-poster.pdf`);
 }
 
+export async function exportExecutiveRoadmapPrintPdf(schedule: ProgrammeSchedule, tracker: TrackerData | undefined, dateWindow: DateWindow, contextItemUids: string[] = [], removedItemUids: string[] = [], laneOrderUids: string[] = []) {
+  const { default: jsPDF } = await import("jspdf");
+  const model = buildExecutiveRoadmapModel(schedule, tracker, dateWindow, { contextItemUids, removedItemUids, laneOrderUids });
+  const contextUidSet = new Set(contextItemUids);
+  const doc = new jsPDF({ orientation: "landscape", unit: "mm", format: "a4" });
+  addPosterHeader(doc, schedule, model.reportDate, "A4 visual roadmap");
+  const margin = 12;
+  const pageWidth = doc.internal.pageSize.getWidth();
+  const pageHeight = doc.internal.pageSize.getHeight();
+  let y = 42;
+  y = drawLegend(doc, margin, y, pageWidth - margin * 2);
+
+  const laneHeight = 58;
+  model.paths.forEach((path, index) => {
+    if (index > 0 && y + laneHeight > pageHeight - 16) {
+      doc.addPage();
+      addPosterHeader(doc, schedule, model.reportDate, "A4 visual roadmap");
+      y = 42;
+      y = drawLegend(doc, margin, y, pageWidth - margin * 2);
+    }
+    y = drawPathRow(doc, path.outcome.name, [...path.dependencies, path.outcome], y, contextUidSet);
+  });
+  if (!model.paths.length) {
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(11);
+    setText(doc, colours.ink);
+    doc.text("No executive roadmap lanes found in the current date window.", margin, y + 10);
+  }
+  addPosterFooter(doc);
+  doc.save(`${fileSlug(schedule.title)}-executive-roadmap-a4-visual.pdf`);
+}
+
 export function exportExecutiveRoadmapHtml(schedule: ProgrammeSchedule, tracker: TrackerData | undefined, dateWindow: DateWindow, contextItemUids: string[] = [], removedItemUids: string[] = [], laneOrderUids: string[] = []) {
   const model = buildExecutiveRoadmapModel(schedule, tracker, dateWindow, { contextItemUids, removedItemUids, laneOrderUids });
   const contextUidSet = new Set(contextItemUids);
   const milestoneCards = model.outcomes.map((item) => {
     const tone = executiveTone(item);
-    const assessment = executiveToneAssessment(item);
     return `<article class="milestone ${tone}">
       <span>${escapeHtml(formatDate(item.finishDate))}</span>
       <strong>${escapeHtml(item.name)}</strong>
-      <p>${escapeHtml(assessment.summary)}</p>
       <em>${escapeHtml(executiveToneLabel(item))}</em>
     </article>`;
   }).join("");
@@ -338,14 +373,14 @@ export function exportExecutiveRoadmapHtml(schedule: ProgrammeSchedule, tracker:
       <h2>${escapeHtml(path.outcome.name)}</h2>
       <div class="sequence">
         ${[...path.dependencies, path.outcome].map((item) => {
-          const tone = executiveTone(item);
-          const assessment = executiveToneAssessment(item);
+          const isOutcome = item.uid === path.outcome.uid;
+          const tone = isOutcome ? executiveTone(item) : regularMilestoneToneAssessment(item).tone;
           return `<article class="node ${tone} ${contextUidSet.has(item.uid) ? "context" : ""}">
             <span>${escapeHtml(formatDate(item.finishDate))}</span>
             <i></i>
             <strong>${escapeHtml(item.name)}</strong>
-            ${contextUidSet.has(item.uid) ? "<em>Added context</em>" : ""}
-            <p>${escapeHtml(assessment.summary)}</p>
+            <em>${escapeHtml(isOutcome ? executiveToneLabel(item) : regularMilestoneToneLabel(item))}</em>
+            ${contextUidSet.has(item.uid) ? "<small>Added context</small>" : ""}
           </article>`;
         }).join("")}
       </div>
@@ -378,19 +413,19 @@ export function exportExecutiveRoadmapHtml(schedule: ProgrammeSchedule, tracker:
     .legend p { flex-basis: 100%; font-size: 13px; }
     .milestones { grid-template-columns: repeat(${Math.max(1, model.outcomes.length)}, 1fr); margin-bottom: 28px; }
     .summary article.status, .milestone { border-color: var(--tone); background: var(--card-bg); }
-    .milestone { min-height: 185px; padding: 18px; border-top: 7px solid var(--tone); }
+    .milestone { display: flex; flex-direction: column; min-height: 170px; padding: 18px; border-top: 7px solid var(--tone); }
     .milestone span, .node span { color: #647269; font-weight: 800; }
     .milestone strong { display: block; margin: 20px 0 10px; font-size: 20px; line-height: 1.35; }
-    .milestone p, .node p { margin: 0 0 12px; color: #647269; font-size: 13px; line-height: 1.35; }
-    .milestone em { display: inline-block; padding: 7px 10px; border-radius: 999px; color: white; background: var(--tone); font-style: normal; font-weight: 900; }
-    .green { --tone: #2e7d55; --card-bg: #e7f5ed; } .blue { --tone: #3d78a9; --card-bg: #e8f2fb; } .amber { --tone: #ff8a00; --card-bg: #fff0d2; } .red { --tone: #b33a32; --card-bg: #ffe7e5; } .grey { --tone: #7e8c84; --card-bg: #edf1ef; }
+    .milestone em { display: inline-block; width: fit-content; margin-top: auto; padding: 7px 10px; border-radius: 999px; color: white; background: var(--tone); font-style: normal; font-weight: 900; }
+    .green { --tone: #2e7d55; --card-bg: #e7f5ed; } .blue { --tone: #3d78a9; --card-bg: #e8f2fb; } .purple { --tone: #7b5fc4; --card-bg: #f0ecff; } .amber { --tone: #ff8a00; --card-bg: #fff0d2; } .red { --tone: #b33a32; --card-bg: #ffe7e5; } .grey { --tone: #7e8c84; --card-bg: #edf1ef; }
     .path { margin-bottom: 16px; padding: 18px; break-inside: avoid; }
     .path h2 { margin: 0 0 16px; font-size: 20px; }
     .sequence { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(130px, 1fr); gap: 14px; align-items: start; border-top: 4px solid #c7d1cb; padding-top: 14px; overflow-x: auto; }
-    .node { display: grid; gap: 8px; text-align: center; }
+    .node { display: flex; flex-direction: column; gap: 8px; min-height: 132px; text-align: center; }
     .node i { justify-self: center; width: 18px; height: 18px; border-radius: 999px; background: var(--tone); }
     .node strong { font-size: 14px; line-height: 1.3; }
-    .node em { color: #245f8f; font-size: 11px; font-style: normal; font-weight: 900; }
+    .node em { width: fit-content; margin: auto auto 0; align-self: center; padding: 5px 8px; border-radius: 999px; color: white; background: var(--tone); font-size: 11px; font-style: normal; font-weight: 900; }
+    .node small { color: #245f8f; font-size: 11px; font-weight: 900; }
     @media print { body { background: white; } main { padding: 12mm; } header { margin: -12mm -12mm 10mm; } .path, .milestone, .summary article, .legend { box-shadow: none; } }
   </style>
 </head>
@@ -412,11 +447,10 @@ export function exportExecutiveRoadmapHtml(schedule: ProgrammeSchedule, tracker:
     <section class="legend" aria-label="Colour status legend">
       <strong>Colour status</strong>
       <span class="green"><i></i>Complete / confirmed</span>
-      <span class="blue"><i></i>Planned / dated</span>
+      <span class="blue"><i></i>Ongoing</span>
+      <span class="purple"><i></i>Future</span>
       <span class="amber"><i></i>Date assumption / not confirmed</span>
-      <span class="red"><i></i>Blocked / late</span>
-      <span class="grey"><i></i>Not assessed</span>
-      <p>Orange means Date Assumption is Yes or the source RAG is Amber. Decision and dependency flags are shown as detail evidence.</p>
+      <span class="red"><i></i>Late</span>
     </section>
     <section class="milestones">${milestoneCards}</section>
     ${pathRows}
